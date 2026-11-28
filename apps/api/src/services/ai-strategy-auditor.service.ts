@@ -17,6 +17,7 @@ import { IAiStrategyAudit } from '@tradevault/shared';
 import { Strategy, Trade, User } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
+import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 export class AiStrategyAuditorService {
   static async auditStrategy(
@@ -152,6 +153,7 @@ export class AiStrategyAuditorService {
       try {
         const geminiResult = await this.synthesizeWithGemini({
           apiKey: activeKey,
+          userId: uId,
           preferredModel: user?.aiSettings?.model,
           strategy,
           quant: quantResult,
@@ -238,6 +240,7 @@ export class AiStrategyAuditorService {
 
   private static async synthesizeWithGemini(params: {
     apiKey: string;
+    userId?: mongoose.Types.ObjectId;
     preferredModel?: string;
     strategy: any;
     quant: IAiStrategyAudit;
@@ -248,7 +251,7 @@ export class AiStrategyAuditorService {
     topWinnerConfluences: string[];
     topLoserMistakes: string[];
   }): Promise<IAiStrategyAudit | null> {
-    const { apiKey, preferredModel, quant, strategy } = params;
+    const { apiKey, userId, preferredModel, quant, strategy } = params;
 
     const systemPrompt = `You are SetupMint's Quantitative Strategy Architect & Hedge Fund Risk Auditor.
 Analyze this trading strategy playbook based on historical trade outcomes.
@@ -286,6 +289,10 @@ Respond strictly in valid JSON matching this schema:
     ].filter(Boolean) as string[];
 
     for (const model of candidateModels) {
+      if (userId) {
+        AiUsageTrackerService.recordRequest(userId, 'STRATEGY_AUDIT', model).catch(() => {});
+      }
+
       const startTime = Date.now();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const controller = new AbortController();
@@ -307,7 +314,12 @@ Respond strictly in valid JSON matching this schema:
         });
 
         clearTimeout(timeout);
-        if (!response.ok) continue;
+        if (!response.ok) {
+          if (response.status === 429 && userId) {
+            AiUsageTrackerService.recordRateLimit(userId, 'STRATEGY_AUDIT', 'HTTP 429 Strategy Audit Rate Limit Exceeded').catch(() => {});
+          }
+          continue;
+        }
 
         const resJson: any = await response.json();
         const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;

@@ -13,6 +13,7 @@ import { IAiCoachDebrief } from '@tradevault/shared';
 import { DailyJournal, Trade, User } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
+import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 interface ISessionAnalysisInput {
   date: string;
@@ -100,6 +101,7 @@ export class AiCoachService {
    */
   static async generateDebrief(input: ISessionAnalysisInput & { user?: any }): Promise<IAiCoachDebrief> {
     const { date, trades, userRiskSettings, user } = input;
+    const userId = user?._id || user?.id;
 
     // Run Deterministic Quantitative Analysis
     const quantAnalysis = this.analyzeQuantitativeMetrics(date, trades, userRiskSettings);
@@ -121,7 +123,7 @@ export class AiCoachService {
 
     // Call Gemini API free tier
     try {
-      const llmDebrief = await this.callGeminiSynthesis(geminiApiKey, quantAnalysis, trades);
+      const llmDebrief = await this.callGeminiSynthesis(geminiApiKey, quantAnalysis, trades, userId);
       if (llmDebrief) {
         return llmDebrief;
       }
@@ -318,7 +320,8 @@ export class AiCoachService {
   private static async callGeminiSynthesis(
     apiKey: string,
     quant: IAiCoachDebrief,
-    trades: any[]
+    trades: any[],
+    userId?: string | mongoose.Types.ObjectId
   ): Promise<IAiCoachDebrief | null> {
     const tradeTelemetry = trades.map((t, idx) => ({
       index: idx + 1,
@@ -365,6 +368,10 @@ Return ONLY a valid JSON object matching this schema:
     ];
 
     for (const model of candidateModels) {
+      if (userId) {
+        AiUsageTrackerService.recordRequest(userId, 'COACH_DEBRIEF', model).catch(() => {});
+      }
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12000);
@@ -393,6 +400,9 @@ Return ONLY a valid JSON object matching this schema:
         clearTimeout(timeout);
 
         if (!response.ok) {
+          if (response.status === 429 && userId) {
+            AiUsageTrackerService.recordRateLimit(userId, 'COACH_DEBRIEF', 'HTTP 429 Coach Rate Limit Exceeded').catch(() => {});
+          }
           continue;
         }
 

@@ -40,6 +40,7 @@ import PsychologyRounded from '@mui/icons-material/PsychologyRounded';
 import BoltRounded from '@mui/icons-material/BoltRounded';
 import ErrorOutlineRounded from '@mui/icons-material/ErrorOutlineRounded';
 import { ILiveWatcherDisplaySettings } from '@tradevault/shared';
+import { AiQuotaMonitorCard } from './AiQuotaMonitorCard.js';
 
 function parseUserAgent(ua?: string): { browser: string; os: string; full: string; isMobile: boolean } {
   if (!ua) return { browser: 'Unknown Browser', os: 'Unknown Device', full: 'Web Session (Unknown Device)', isMobile: false };
@@ -694,6 +695,11 @@ export function ProfileSystemTab({
               </Box>
             </CardContent>
           </Card>
+
+          {/* AI API Quota & Usage Monitor Card */}
+          <Box sx={{ mt: 2.5 }}>
+            <AiQuotaMonitorCard />
+          </Box>
         </Grid>
       </Grid>
 

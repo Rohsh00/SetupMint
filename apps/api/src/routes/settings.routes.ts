@@ -15,6 +15,7 @@ import { TelegramAlertService } from '../services/telegram-alert.service.js';
 import { TelegramPollingService } from '../services/telegram-polling.service.js';
 import { EconomicCalendarService } from '../services/economic-calendar.service.js';
 import { encryptSecret, decryptSecret, safeDecryptSecret } from '../services/crypto.service.js';
+import { AiUsageTrackerService } from '../services/ai-usage-tracker.service.js';
 import { config } from '../config.js';
 
 function maskLiveWatcherSettings(settings: any) {
@@ -57,6 +58,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           autoApplyTradeDetails: user.aiSettings.autoApplyTradeDetails ?? false,
           hasGeminiApiKey: Boolean(user.aiSettings.geminiApiKey || config.geminiApiKey),
           geminiApiKey: user.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
+          dailyRequestLimit: user.aiSettings.dailyRequestLimit ?? 1500,
+          minuteRequestLimit: user.aiSettings.minuteRequestLimit ?? 15,
+          tier: user.aiSettings.tier || 'free',
         } : {
           enabled: true,
           model: 'gemini-3.5-flash-lite',
@@ -64,6 +68,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           autoApplyTradeDetails: false,
           hasGeminiApiKey: Boolean(config.geminiApiKey),
           geminiApiKey: config.geminiApiKey ? '•••••••• (Server Default)' : '',
+          dailyRequestLimit: 1500,
+          minuteRequestLimit: 15,
+          tier: 'free',
         },
       },
     });
@@ -293,6 +300,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       if (aiSettings.model !== undefined) update['aiSettings.model'] = String(aiSettings.model).trim();
       if (aiSettings.autoAnalyzeTrades !== undefined) update['aiSettings.autoAnalyzeTrades'] = Boolean(aiSettings.autoAnalyzeTrades);
       if (aiSettings.autoApplyTradeDetails !== undefined) update['aiSettings.autoApplyTradeDetails'] = Boolean(aiSettings.autoApplyTradeDetails);
+      if (aiSettings.dailyRequestLimit !== undefined) update['aiSettings.dailyRequestLimit'] = Number(aiSettings.dailyRequestLimit);
+      if (aiSettings.minuteRequestLimit !== undefined) update['aiSettings.minuteRequestLimit'] = Number(aiSettings.minuteRequestLimit);
+      if (aiSettings.tier !== undefined) update['aiSettings.tier'] = String(aiSettings.tier).trim();
       if (aiSettings.clearGeminiApiKey === true) {
         update['aiSettings.geminiApiKey'] = '';
       } else if (aiSettings.geminiApiKey !== undefined) {
@@ -541,6 +551,9 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
           const errJson: any = await response.json().catch(() => null);
           const errMsg = errJson?.error?.message || response.statusText || `HTTP ${response.status}`;
           lastError = `Google API (${model}): ${errMsg}`;
+          if (response.status === 429) {
+            void AiUsageTrackerService.recordRateLimit(req.user!.id, 'TEST_CONNECTION', model, errMsg);
+          }
           // If key is invalid (400 or 401 API key not valid), stop trying further models
           if (
             (response.status === 400 || response.status === 401 || response.status === 403) &&
@@ -579,6 +592,8 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
       }
     }
 
+    void AiUsageTrackerService.recordRequest(req.user!.id, 'TEST_CONNECTION', verifiedModel, 10);
+
     return reply.send({
       success: true,
       data: {
@@ -587,6 +602,25 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         latencyMs,
         message: `Connected successfully to Google Gemini (${verifiedModel}) in ${latencyMs}ms.`,
       },
+    });
+  });
+
+  // Get AI API Quota & Usage Status (Daily Requests Made, Remaining, Minute RPM, Rate Limit Breaches)
+  app.get('/ai-quota', async (req: any, reply) => {
+    const quota = await AiUsageTrackerService.getQuotaStatus(req.user!.id);
+    return reply.send({
+      success: true,
+      data: quota,
+    });
+  });
+
+  // Update AI Quota Limits & Tier (e.g. Free Tier vs Custom Limits)
+  app.patch('/ai-quota-limits', async (req: any, reply) => {
+    const { dailyLimit, minuteLimit, tier } = req.body || {};
+    const quota = await AiUsageTrackerService.updateLimits(req.user!.id, { dailyLimit, minuteLimit, tier });
+    return reply.send({
+      success: true,
+      data: quota,
     });
   });
 

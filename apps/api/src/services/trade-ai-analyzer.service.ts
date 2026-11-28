@@ -19,6 +19,7 @@ import { safeDecryptSecret } from './crypto.service.js';
 import { getStorage } from '../storage/index.js';
 import { detectHtfTrend4h, detectLtfSetup5m } from '@tradevault/financial-engine';
 import { PatternRecognitionService } from './pattern-recognition.service.js';
+import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 async function streamToBuffer(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -229,6 +230,7 @@ export class TradeAiAnalyzerService {
       try {
         const geminiResult = await this.synthesizeWithGemini({
           apiKey: activeKey,
+          userId: uId,
           trade,
           quant: quantAnalysis,
           candleContextStr,
@@ -770,6 +772,7 @@ export class TradeAiAnalyzerService {
    */
   private static async synthesizeWithGemini(params: {
     apiKey: string;
+    userId?: mongoose.Types.ObjectId;
     trade: any;
     quant: ITradeAiAnalysis;
     candleContextStr: string;
@@ -778,7 +781,7 @@ export class TradeAiAnalyzerService {
     availableStrategies?: any[];
     preferredModel?: string;
   }): Promise<ITradeAiAnalysis | null> {
-    const { apiKey, trade, quant, candleContextStr, chartImageBase64, chartImageMime, availableStrategies, preferredModel } = params;
+    const { apiKey, userId, trade, quant, candleContextStr, chartImageBase64, chartImageMime, availableStrategies, preferredModel } = params;
 
     const strategiesSummary =
       availableStrategies && availableStrategies.length > 0
@@ -869,6 +872,10 @@ ${strategiesSummary}`;
     ].filter(Boolean) as string[];
 
     for (const model of candidateModels) {
+      if (userId) {
+        AiUsageTrackerService.recordRequest(userId, 'TRADE_ANALYSIS', model).catch(() => {});
+      }
+
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 12000);
@@ -891,6 +898,9 @@ ${strategiesSummary}`;
         clearTimeout(timeout);
 
         if (!response.ok) {
+          if (response.status === 429 && userId) {
+            AiUsageTrackerService.recordRateLimit(userId, 'TRADE_ANALYSIS', 'HTTP 429 Gemini Rate Limit Exceeded').catch(() => {});
+          }
           continue;
         }
 

@@ -22,9 +22,11 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import BoltRoundedIcon from '@mui/icons-material/BoltRounded';
+import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded';
 
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
+import { useAiQuota } from '../../hooks/useAiQuota.js';
 import { IBatchAiAnalyzeResult } from '@tradevault/shared';
 
 interface BatchAiAnalyzeDialogProps {
@@ -43,6 +45,7 @@ export function BatchAiAnalyzeDialog({
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const queryClient = useQueryClient();
+  const { quota } = useAiQuota();
 
   const [autoApply, setAutoApply] = useState(true);
   const [force, setForce] = useState(true);
@@ -94,6 +97,46 @@ export function BatchAiAnalyzeDialog({
             <Alert severity="info" sx={{ borderRadius: 2 }}>
               Targeting <b>{selectedIds.length} trade{selectedIds.length > 1 ? 's' : ''}</b> for deep AI candlestick price action perception, setup categorization, and discipline audit.
             </Alert>
+
+            {quota && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  px: 1.75,
+                  py: 1.25,
+                  borderRadius: 2,
+                  bgcolor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+                  border: '1px solid',
+                  borderColor: isDark ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.18)',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <SpeedRoundedIcon sx={{ fontSize: 20, color: '#6366f1' }} />
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                      {quota.requestsRemainingToday.toLocaleString()} requests remaining today
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {quota.requestsToday} used of {quota.dailyLimit} daily quota ({quota.requestsThisMinute}/{quota.minuteLimit} RPM burst)
+                    </Typography>
+                  </Box>
+                </Box>
+                <Chip
+                  size="small"
+                  label={quota.isRateLimited ? 'Rate Limited' : 'Free Tier'}
+                  color={quota.isRateLimited ? 'error' : 'default'}
+                  sx={{ height: 22, fontSize: '0.68rem', fontWeight: 700 }}
+                />
+              </Box>
+            )}
+
+            {quota && quota.requestsRemainingToday < selectedIds.length && (
+              <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                You selected {selectedIds.length} trades, but only {quota.requestsRemainingToday} AI requests remain in your daily quota. Remaining trades will automatically fall back to the deterministic Quant Engine at zero cost.
+              </Alert>
+            )}
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, bgcolor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', p: 2, borderRadius: 2 }}>
               <FormControlLabel

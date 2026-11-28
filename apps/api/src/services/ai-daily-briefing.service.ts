@@ -17,6 +17,7 @@ import { IAiDailyBriefing } from '@tradevault/shared';
 import { DailyJournal, Trade, User, Strategy } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
+import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 export class AiDailyBriefingService {
   static async getOrGenerateBriefing(params: {
@@ -117,6 +118,7 @@ export class AiDailyBriefingService {
       try {
         const geminiResult = await this.synthesizeWithGemini({
           apiKey: activeKey,
+          userId: uId,
           preferredModel: user?.aiSettings?.model,
           quant: quantBriefing,
           lastJournal,
@@ -204,6 +206,7 @@ export class AiDailyBriefingService {
 
   private static async synthesizeWithGemini(params: {
     apiKey: string;
+    userId?: mongoose.Types.ObjectId;
     preferredModel?: string;
     quant: IAiDailyBriefing;
     lastJournal?: any;
@@ -211,7 +214,7 @@ export class AiDailyBriefingService {
     topSymbol?: string;
     mostCommonLeak?: string;
   }): Promise<IAiDailyBriefing | null> {
-    const { apiKey, preferredModel, quant } = params;
+    const { apiKey, userId, preferredModel, quant } = params;
 
     const systemPrompt = `You are SetupMint's Chief Psychological Trading Coach & Desk Risk Officer.
 Generate an institutional morning readiness debrief for an active discretionary trader before their session.
@@ -244,6 +247,10 @@ Respond strictly in valid JSON matching this schema:
     ].filter(Boolean) as string[];
 
     for (const model of candidateModels) {
+      if (userId) {
+        AiUsageTrackerService.recordRequest(userId, 'DAILY_BRIEFING', model).catch(() => {});
+      }
+
       const startTime = Date.now();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const controller = new AbortController();
@@ -265,7 +272,12 @@ Respond strictly in valid JSON matching this schema:
         });
 
         clearTimeout(timeout);
-        if (!response.ok) continue;
+        if (!response.ok) {
+          if (response.status === 429 && userId) {
+            AiUsageTrackerService.recordRateLimit(userId, 'DAILY_BRIEFING', 'HTTP 429 Rate Limit Exceeded').catch(() => {});
+          }
+          continue;
+        }
 
         const resJson: any = await response.json();
         const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;

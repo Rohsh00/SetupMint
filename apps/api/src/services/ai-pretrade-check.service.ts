@@ -18,6 +18,7 @@ import { IAiPreTradeCheckInput, IAiPreTradeCheckResult } from '@tradevault/share
 import { Trade, User, Strategy, TradingAccount } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
+import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 export class AiPreTradeCheckService {
   static async checkPreTrade(
@@ -186,6 +187,7 @@ export class AiPreTradeCheckService {
       try {
         const geminiResult = await this.synthesizeWithGemini({
           apiKey: activeKey,
+          userId: uId,
           preferredModel: user?.aiSettings?.model,
           input,
           quant: quantResult,
@@ -407,6 +409,7 @@ export class AiPreTradeCheckService {
    */
   private static async synthesizeWithGemini(params: {
     apiKey: string;
+    userId?: mongoose.Types.ObjectId;
     preferredModel?: string;
     input: IAiPreTradeCheckInput;
     quant: IAiPreTradeCheckResult;
@@ -421,7 +424,7 @@ export class AiPreTradeCheckService {
     avgR: number;
     strategyName?: string;
   }): Promise<IAiPreTradeCheckResult | null> {
-    const { apiKey, preferredModel, input, quant } = params;
+    const { apiKey, userId, preferredModel, input, quant } = params;
 
     const systemPrompt = `You are SetupMint's Pre-Trade Risk & Edge Coach for professional discretionary traders.
 Your mission is to audit a trader's proposed trade parameters BEFORE entry.
@@ -480,6 +483,10 @@ Respond strictly in valid JSON format matching this schema:
     ].filter(Boolean) as string[];
 
     for (const model of candidateModels) {
+      if (userId) {
+        AiUsageTrackerService.recordRequest(userId, 'PRETRADE_CHECK', model).catch(() => {});
+      }
+
       const startTime = Date.now();
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const controller = new AbortController();
@@ -501,7 +508,12 @@ Respond strictly in valid JSON format matching this schema:
         });
 
         clearTimeout(timeout);
-        if (!response.ok) continue;
+        if (!response.ok) {
+          if (response.status === 429 && userId) {
+            AiUsageTrackerService.recordRateLimit(userId, 'PRETRADE_CHECK', 'HTTP 429 Pre-Trade Check Rate Limit Exceeded').catch(() => {});
+          }
+          continue;
+        }
 
         const resJson: any = await response.json();
         const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;

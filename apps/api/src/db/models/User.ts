@@ -31,6 +31,9 @@ export interface IUserDoc extends Document {
     model?: string;
     autoAnalyzeTrades?: boolean;
     autoApplyTradeDetails?: boolean;
+    dailyRequestLimit?: number;
+    minuteRequestLimit?: number;
+    tier?: string;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -222,6 +225,9 @@ const UserSchema = new Schema<IUserDoc>(
       model: { type: String, default: 'gemini-2.5-flash' },
       autoAnalyzeTrades: { type: Boolean, default: true },
       autoApplyTradeDetails: { type: Boolean, default: false },
+      dailyRequestLimit: { type: Number, default: 1500 },
+      minuteRequestLimit: { type: Number, default: 15 },
+      tier: { type: String, default: 'free' },
     },
   },
   {

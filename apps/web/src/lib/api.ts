@@ -16,6 +16,7 @@ import type {
   IBatchAiAnalyzeResult,
   IAiStrategyAudit,
   IAiWeeklySummary,
+  IAiQuotaStatus,
 } from '@tradevault/shared';
 
 export function getApiBaseUrl(): string {
@@ -1013,6 +1014,13 @@ export const api = {
       request<any>('/settings/test-session-alert', { method: 'POST' }),
     testGemini: (data?: { apiKey?: string; model?: string }) =>
       request<any>('/settings/test-gemini', { method: 'POST', body: JSON.stringify(data || {}) }),
+    getAiQuota: () =>
+      request<{ success: boolean; data: IAiQuotaStatus }>('/settings/ai-quota'),
+    updateAiQuotaLimits: (data: { dailyLimit?: number; minuteLimit?: number; tier?: string }) =>
+      request<{ success: boolean; data: IAiQuotaStatus }>('/settings/ai-quota-limits', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
   },
 
   // Review Queue & Mistake Detection

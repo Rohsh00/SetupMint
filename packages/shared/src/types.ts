@@ -1244,6 +1244,29 @@ export interface IUserAiSettings {
   model?: string;
   autoAnalyzeTrades?: boolean;
   autoApplyTradeDetails?: boolean;
+  dailyRequestLimit?: number;
+  minuteRequestLimit?: number;
+  tier?: 'FREE' | 'PAID' | 'CUSTOM';
+}
+
+export interface IAiQuotaStatus {
+  tier: 'free' | 'payg' | 'custom' | 'FREE' | 'PAID' | 'CUSTOM' | string;
+  dailyLimit: number;
+  requestsToday: number;
+  requestsRemainingToday: number;
+  percentDailyUsed: number;
+  minuteLimit: number;
+  requestsThisMinute: number;
+  requestsRemainingThisMinute: number;
+  isRateLimited: boolean;
+  rateLimitedEventsToday: number;
+  resetAtUtc: string;
+  resetsInHours: number;
+  lastRequestAt?: string;
+  lastModelUsed?: string;
+  lastStatus: 'OK' | 'RATE_LIMITED' | 'ERROR';
+  lastErrorMessage?: string;
+  featuresToday: Record<string, number>;
 }
 
 export interface IAnalyticsAiDirective {

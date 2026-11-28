@@ -21,9 +21,11 @@ import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
 import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import AssignmentTurnedInRoundedIcon from '@mui/icons-material/AssignmentTurnedInRounded';
+import SpeedRoundedIcon from '@mui/icons-material/SpeedRounded';
 
 import { api } from '../../lib/api.js';
 import { toast } from '../../context/ToastContext.js';
+import { useAiQuota } from '../../hooks/useAiQuota.js';
 import { ITradeAiAnalysis } from '@tradevault/shared';
 
 interface TradeAiCopilotPanelProps {
@@ -35,6 +37,7 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const queryClient = useQueryClient();
+  const { quota } = useAiQuota();
 
   const tradeId = trade?.id || trade?._id;
   const ai: ITradeAiAnalysis | undefined = trade?.aiAnalysis;
@@ -195,6 +198,39 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {quota && (
+            <Tooltip
+              title={`Daily Google Gemini Quota: ${quota.requestsToday} of ${quota.dailyLimit} requests used today. ${quota.requestsRemainingToday} remaining. Rolling rate: ${quota.requestsThisMinute}/${quota.minuteLimit} RPM.${
+                quota.isRateLimited ? ' (Rate limit reached: deterministic Quant Engine fallback is currently active)' : ''
+              }`}
+            >
+              <Chip
+                size="small"
+                icon={<SpeedRoundedIcon sx={{ fontSize: '13px !important' }} />}
+                label={quota.isRateLimited ? 'RPM Fallback' : `${quota.requestsRemainingToday.toLocaleString()} left`}
+                sx={{
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  height: 22,
+                  bgcolor: quota.isRateLimited
+                    ? 'rgba(239, 68, 68, 0.15)'
+                    : quota.requestsRemainingToday < 100
+                    ? 'rgba(245, 158, 11, 0.15)'
+                    : isDark
+                    ? 'rgba(255, 255, 255, 0.06)'
+                    : 'rgba(0, 0, 0, 0.05)',
+                  color: quota.isRateLimited
+                    ? '#ef4444'
+                    : quota.requestsRemainingToday < 100
+                    ? '#f59e0b'
+                    : 'text.secondary',
+                  border: '1px solid',
+                  borderColor: quota.isRateLimited ? 'rgba(239, 68, 68, 0.3)' : 'divider',
+                }}
+              />
+            </Tooltip>
+          )}
+
           {ai && (
             <Chip
               size="small"

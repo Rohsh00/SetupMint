@@ -14,6 +14,7 @@ import { IAnalyticsAiAudit, IAnalyticsAiDirective } from '@tradevault/shared';
 import { User } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
+import { AiUsageTrackerService } from './ai-usage-tracker.service.js';
 
 export interface IAnalyticsAiInput {
   userId: string | mongoose.Types.ObjectId;
@@ -213,6 +214,7 @@ export class AnalyticsAiAdvisorService {
     try {
       const startTime = Date.now();
       const llmAudit = await this.synthesizeWithGemini({
+        userId,
         apiKey: geminiApiKey,
         quant: quantAudit,
         metrics: {
@@ -455,13 +457,14 @@ export class AnalyticsAiAdvisorService {
    * Google Gemini Synthesis (Multi-model candidate iteration with vision / text)
    */
   private static async synthesizeWithGemini(params: {
+    userId: string | mongoose.Types.ObjectId;
     apiKey: string;
     quant: IAnalyticsAiAudit;
     metrics: any;
     scopeLabel?: string;
     filterSummary?: string;
   }): Promise<IAnalyticsAiAudit | null> {
-    const { apiKey, quant, metrics, scopeLabel, filterSummary } = params;
+    const { userId, apiKey, quant, metrics, scopeLabel, filterSummary } = params;
 
     const systemPrompt = `You are SetupMint's Chief Quantitative Trading Officer & Elite Trading Performance Coach.
 Analyze the trader's quantitative performance metrics across all dimensions (Summary, Overview, Psychology, Execution Quality, Position Sizing, Time & Sessions).
@@ -541,13 +544,20 @@ Grade: ${quant.edgeGrade} (${quant.overallVerdict})
 
         clearTimeout(timeout);
 
-        if (!response.ok) continue;
+        if (!response.ok) {
+          if (response.status === 429) {
+            void AiUsageTrackerService.recordRateLimit(userId, 'ANALYTICS_ADVISOR', model, 'HTTP 429 Rate Limited');
+          }
+          continue;
+        }
 
         const resJson: any = await response.json();
         const rawText = resJson?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!rawText) continue;
 
         const p = JSON.parse(rawText);
+
+        void AiUsageTrackerService.recordRequest(userId, 'ANALYTICS_ADVISOR', model, 800);
 
         return {
           overallVerdict: String(p.overallVerdict || quant.overallVerdict),

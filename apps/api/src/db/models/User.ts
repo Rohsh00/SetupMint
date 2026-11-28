@@ -29,6 +29,8 @@ export interface IUserDoc extends Document {
     geminiApiKey?: string;
     enabled?: boolean;
     model?: string;
+    autoAnalyzeTrades?: boolean;
+    autoApplyTradeDetails?: boolean;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -218,6 +220,8 @@ const UserSchema = new Schema<IUserDoc>(
       geminiApiKey: { type: String },
       enabled: { type: Boolean, default: true },
       model: { type: String, default: 'gemini-2.5-flash' },
+      autoAnalyzeTrades: { type: Boolean, default: true },
+      autoApplyTradeDetails: { type: Boolean, default: false },
     },
   },
   {

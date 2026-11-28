@@ -53,11 +53,15 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         aiSettings: user.aiSettings ? {
           enabled: user.aiSettings.enabled ?? true,
           model: user.aiSettings.model || 'gemini-2.5-flash',
+          autoAnalyzeTrades: user.aiSettings.autoAnalyzeTrades ?? true,
+          autoApplyTradeDetails: user.aiSettings.autoApplyTradeDetails ?? false,
           hasGeminiApiKey: Boolean(user.aiSettings.geminiApiKey || config.geminiApiKey),
           geminiApiKey: user.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
         } : {
           enabled: true,
           model: 'gemini-2.5-flash',
+          autoAnalyzeTrades: true,
+          autoApplyTradeDetails: false,
           hasGeminiApiKey: Boolean(config.geminiApiKey),
           geminiApiKey: config.geminiApiKey ? '•••••••• (Server Default)' : '',
         },
@@ -287,6 +291,8 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     if (aiSettings && typeof aiSettings === 'object') {
       if (aiSettings.enabled !== undefined) update['aiSettings.enabled'] = Boolean(aiSettings.enabled);
       if (aiSettings.model !== undefined) update['aiSettings.model'] = String(aiSettings.model).trim();
+      if (aiSettings.autoAnalyzeTrades !== undefined) update['aiSettings.autoAnalyzeTrades'] = Boolean(aiSettings.autoAnalyzeTrades);
+      if (aiSettings.autoApplyTradeDetails !== undefined) update['aiSettings.autoApplyTradeDetails'] = Boolean(aiSettings.autoApplyTradeDetails);
       if (aiSettings.geminiApiKey !== undefined) {
         const rawKey = String(aiSettings.geminiApiKey).trim();
         if (rawKey && !rawKey.startsWith('••') && !rawKey.startsWith('**')) {
@@ -336,11 +342,15 @@ export const settingsRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
         aiSettings: user!.aiSettings ? {
           enabled: user!.aiSettings.enabled ?? true,
           model: user!.aiSettings.model || 'gemini-2.5-flash',
+          autoAnalyzeTrades: user!.aiSettings.autoAnalyzeTrades ?? true,
+          autoApplyTradeDetails: user!.aiSettings.autoApplyTradeDetails ?? false,
           hasGeminiApiKey: Boolean(user!.aiSettings.geminiApiKey || config.geminiApiKey),
           geminiApiKey: user!.aiSettings.geminiApiKey ? '••••••••' : (config.geminiApiKey ? '•••••••• (Server Default)' : ''),
         } : {
           enabled: true,
           model: 'gemini-2.5-flash',
+          autoAnalyzeTrades: true,
+          autoApplyTradeDetails: false,
           hasGeminiApiKey: Boolean(config.geminiApiKey),
           geminiApiKey: config.geminiApiKey ? '•••••••• (Server Default)' : '',
         },

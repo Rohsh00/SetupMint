@@ -2471,6 +2471,14 @@ export class FyersService {
       console.warn(`[Auto-Backfill] Setup pattern classification failed for trade ${tId}:`, err?.message || err);
     }
 
+    // 4. Run AI Trade & Chart Analysis
+    try {
+      const { TradeAiAnalyzerService } = await import('./trade-ai-analyzer.service.js');
+      await TradeAiAnalyzerService.analyzeTrade(tId, uId);
+    } catch (err: any) {
+      console.warn(`[Auto-Backfill] AI trade analysis failed for trade ${tId}:`, err?.message || err);
+    }
+
     // 4. Ensure Visual SVG Chart Snapshots
     try {
       const { ChartGeneratorService } = await import('./chart-generator.service.js');

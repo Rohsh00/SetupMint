@@ -48,6 +48,7 @@ import { InstrumentClassifier } from '../services/instrument-classifier.service.
 import { FyersService } from '../services/fyers.service.js';
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
+import { TradeAiAnalyzerService } from '../services/trade-ai-analyzer.service.js';
 import { MarketDataService } from '../services/market-data/index.js';
 import { validateObjectIdParam } from '../middleware/validate.js';
 import { buildTradeMongooseFilter } from '../services/trade-query.service.js';
@@ -892,6 +893,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       ChartGeneratorService.ensureTradeSnapshot(trade._id, req.user!.id).catch((err: any) => {
         req.log.warn('Auto snapshot generation threw for trade %s: %s', trade._id, err.message);
       });
+      TradeAiAnalyzerService.analyzeTrade(trade._id, req.user!.id).catch((err: any) => {
+        req.log.warn('Auto AI trade analysis threw for trade %s: %s', trade._id, err.message);
+      });
     }
 
     if (body.templateId) {
@@ -1039,6 +1043,44 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
       return reply.status(statusCode).send({
         success: false,
         error: { code: 'CLASSIFICATION_FAILED', message: err.message || 'Auto classification failed' },
+      });
+    }
+  });
+
+  // Analyze trade and chart with AI Copilot (Vision + Candlestick Price Action + Quant)
+  app.post('/:id/ai-analysis', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    try {
+      const force = req.body?.force === true;
+      const autoApply = req.body?.autoApply === true;
+      const analysis = await TradeAiAnalyzerService.analyzeTrade(req.params.id, req.user!.id, { force, autoApply });
+      return reply.send({
+        success: true,
+        message: 'Trade AI & chart analysis completed',
+        data: analysis,
+      });
+    } catch (err: any) {
+      const statusCode = err.message.includes('not found') ? 404 : 500;
+      return reply.status(statusCode).send({
+        success: false,
+        error: { code: 'AI_ANALYSIS_FAILED', message: err.message || 'Trade AI analysis failed' },
+      });
+    }
+  });
+
+  // Apply AI analysis details directly into trade fields (thesis, psychology, tags)
+  app.post('/:id/ai-apply', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
+    try {
+      const updated = await TradeAiAnalyzerService.applyAnalysisToTrade(req.params.id, req.user!.id);
+      return reply.send({
+        success: true,
+        message: 'AI details applied to trade successfully',
+        data: updated,
+      });
+    } catch (err: any) {
+      const statusCode = err.message.includes('not found') ? 404 : 500;
+      return reply.status(statusCode).send({
+        success: false,
+        error: { code: 'AI_APPLY_FAILED', message: err.message || 'Failed to apply AI details' },
       });
     }
   });
@@ -1884,6 +1926,9 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         });
         ChartGeneratorService.ensureTradeSnapshot(updated._id, req.user!.id).catch((err: any) => {
           req.log.warn('Auto snapshot generation threw for trade %s: %s', updated._id, err.message);
+        });
+        TradeAiAnalyzerService.analyzeTrade(updated._id, req.user!.id).catch((err: any) => {
+          req.log.warn('Auto AI trade analysis threw for trade %s: %s', updated._id, err.message);
         });
 
         // Telegram Notification for Trade Closure

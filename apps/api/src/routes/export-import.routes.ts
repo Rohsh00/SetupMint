@@ -35,6 +35,7 @@ import { InstrumentClassifier } from '../services/instrument-classifier.service.
 import { ChartGeneratorService } from '../services/chart-generator.service.js';
 import { FyersService } from '../services/fyers.service.js';
 import { PatternRecognitionService } from '../services/pattern-recognition.service.js';
+import { TradeAiAnalyzerService } from '../services/trade-ai-analyzer.service.js';
 
 const TRADE_HEADER_KEYWORDS = [
   'symbol',
@@ -1856,6 +1857,7 @@ export const exportImportRoutes: FastifyPluginAsync = async (app: FastifyInstanc
             await FyersService.computeExcursionForTrade(tId, req.user!.id);
             await PatternRecognitionService.classifyTrade(tId, req.user!.id);
             await ChartGeneratorService.ensureTradeSnapshot(tId, req.user!.id);
+            await TradeAiAnalyzerService.analyzeTrade(tId, req.user!.id);
           } catch (err: any) {
             req.log.warn('CSV import auto-snapshot/excursion/setup generation threw for trade %s: %s', tId, err.message);
           }

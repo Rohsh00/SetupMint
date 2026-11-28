@@ -1404,6 +1404,8 @@ export function SettingsPage() {
   const [baseCurrency, setBaseCurrency] = useState(user?.baseCurrency || 'USD');
   const [geminiApiKey, setGeminiApiKey] = useState((user as any)?.aiSettings?.geminiApiKey || '');
   const [aiEnabled, setAiEnabled] = useState((user as any)?.aiSettings?.enabled ?? true);
+  const [autoAnalyzeTrades, setAutoAnalyzeTrades] = useState((user as any)?.aiSettings?.autoAnalyzeTrades ?? true);
+  const [autoApplyTradeDetails, setAutoApplyTradeDetails] = useState((user as any)?.aiSettings?.autoApplyTradeDetails ?? false);
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
 
@@ -1411,6 +1413,8 @@ export function SettingsPage() {
     if ((user as any)?.aiSettings) {
       setGeminiApiKey((user as any).aiSettings.geminiApiKey || '');
       setAiEnabled((user as any).aiSettings.enabled ?? true);
+      setAutoAnalyzeTrades((user as any).aiSettings.autoAnalyzeTrades ?? true);
+      setAutoApplyTradeDetails((user as any).aiSettings.autoApplyTradeDetails ?? false);
     }
   }, [user]);
 
@@ -1511,6 +1515,8 @@ export function SettingsPage() {
       aiSettings: {
         geminiApiKey,
         enabled: aiEnabled,
+        autoAnalyzeTrades,
+        autoApplyTradeDetails,
         model: 'gemini-2.5-flash',
       },
     });
@@ -2012,6 +2018,10 @@ export function SettingsPage() {
           setGeminiApiKey={setGeminiApiKey}
           aiEnabled={aiEnabled}
           setAiEnabled={setAiEnabled}
+          autoAnalyzeTrades={autoAnalyzeTrades}
+          setAutoAnalyzeTrades={setAutoAnalyzeTrades}
+          autoApplyTradeDetails={autoApplyTradeDetails}
+          setAutoApplyTradeDetails={setAutoApplyTradeDetails}
           hasGeminiKey={Boolean((user as any)?.aiSettings?.hasGeminiApiKey || (user as any)?.aiSettings?.geminiApiKey)}
         />
       )}

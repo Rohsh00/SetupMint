@@ -65,6 +65,7 @@ import { resolveAccountUiCapabilities } from '@tradevault/financial-engine';
 import { TradeFormModal } from '../components/trades/TradeFormModal.js';
 import { TradeScreenshotGallery } from '../components/trades/attachments/TradeScreenshotGallery.js';
 import { TradeInteractiveChart } from '../components/trades/TradeInteractiveChart.js';
+import { TradeAiCopilotPanel } from '../components/trades/TradeAiCopilotPanel.js';
 import { GenerateExecutionChartsPanel } from '../components/trades/GenerateExecutionChartsPanel.js';
 import { QuickCloseTradeDialog } from '../components/trades/QuickCloseTradeDialog.js';
 import { HelpHint } from '../components/help/index.js';
@@ -885,6 +886,12 @@ export function TradeDetailPage() {
         trade={trade}
         attachments={trade.attachments || []}
         onRefreshTrade={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
+      />
+
+      {/* AI Trade & Chart Copilot Panel */}
+      <TradeAiCopilotPanel
+        trade={trade}
+        onTradeUpdated={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
       />
 
       {/* Playbook Strategy & Setup Variant Classification Card */}

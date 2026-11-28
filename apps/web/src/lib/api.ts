@@ -531,6 +531,15 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ tradeIds }),
       }),
+    analyzeAi: (id: string, options?: { force?: boolean; autoApply?: boolean }) =>
+      request<{ success: boolean; data: import('@tradevault/shared').ITradeAiAnalysis }>(`/trades/${id}/ai-analysis`, {
+        method: 'POST',
+        body: JSON.stringify(options || {}),
+      }),
+    applyAiDetails: (id: string) =>
+      request<{ success: boolean; data: any }>(`/trades/${id}/ai-apply`, {
+        method: 'POST',
+      }),
     getInteractiveCandles: (
       id: string,
       params?: {

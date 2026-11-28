@@ -99,6 +99,10 @@ export interface ProfileSystemTabProps {
   setGeminiApiKey: (val: string) => void;
   aiEnabled: boolean;
   setAiEnabled: (val: boolean) => void;
+  autoAnalyzeTrades?: boolean;
+  setAutoAnalyzeTrades?: (val: boolean) => void;
+  autoApplyTradeDetails?: boolean;
+  setAutoApplyTradeDetails?: (val: boolean) => void;
   hasGeminiKey: boolean;
 }
 
@@ -143,6 +147,10 @@ export function ProfileSystemTab({
   setGeminiApiKey,
   aiEnabled,
   setAiEnabled,
+  autoAnalyzeTrades = true,
+  setAutoAnalyzeTrades,
+  autoApplyTradeDetails = false,
+  setAutoApplyTradeDetails,
   hasGeminiKey,
 }: ProfileSystemTabProps) {
   const muiTheme = useMuiTheme();
@@ -424,6 +432,36 @@ export function ProfileSystemTab({
                   <Switch
                     checked={aiEnabled}
                     onChange={(e) => setAiEnabled(e.target.checked)}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Auto-Analyze Every Trade Taken
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Automatically runs AI vision & candlestick price action analysis on new or synced trades
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={autoAnalyzeTrades}
+                    onChange={(e) => setAutoAnalyzeTrades?.(e.target.checked)}
+                  />
+                </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      Auto-Fill Trade Details from AI
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Automatically writes detected setup, thesis, confluences, mistakes, and lessons directly into trade records
+                    </Typography>
+                  </Box>
+                  <Switch
+                    checked={autoApplyTradeDetails}
+                    onChange={(e) => setAutoApplyTradeDetails?.(e.target.checked)}
                   />
                 </Box>
 

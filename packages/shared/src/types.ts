@@ -1164,6 +1164,7 @@ export interface ITrade {
   customLadderRules?: ICustomLadderRules;
   executedLadderSteps?: string[];
   auditLog: IAuditEntry[];
+  aiAnalysis?: ITradeAiAnalysis;
 
   // Pyramiding & Campaign Grouping
   campaignId?: string;
@@ -1180,6 +1181,44 @@ export interface ITrade {
 
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ITradeAiAnalysis {
+  generatedAt: string;
+  modelUsed: string;
+  setupType: string;
+  marketStructure: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'VOLATILE';
+  executionScore: number;
+  disciplineScore: number;
+  confidence: number;
+  chartAnalysis: {
+    hasVisionImage: boolean;
+    candleContext?: string;
+    keyLevelsObserved: string[];
+    confluences: string[];
+    trendBias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+    summary: string;
+  };
+  entryReview: {
+    rating: 'EXCELLENT' | 'GOOD' | 'CHASED' | 'EARLY' | 'LATE';
+    summary: string;
+    slippagePoints?: number;
+  };
+  riskManagement: {
+    stopPlacementRating: 'OPTIMAL' | 'TOO_TIGHT' | 'TOO_WIDE' | 'NO_STOP';
+    summary: string;
+    riskRewardRatio?: number;
+  };
+  exitReview?: {
+    rating: 'OPTIMAL' | 'PREMATURE' | 'GAVE_BACK' | 'TRAILED_OUT' | 'STOPPED_OUT';
+    summary: string;
+    efficiencyPercent?: number;
+    rLeftOnTable?: number;
+  };
+  identifiedMistakes: string[];
+  suggestedTags: string[];
+  lessonsLearned: string;
+  autoApplied: boolean;
 }
 
 export interface IAiCoachDebrief {
@@ -1199,6 +1238,8 @@ export interface IUserAiSettings {
   geminiApiKey?: string;
   enabled?: boolean;
   model?: string;
+  autoAnalyzeTrades?: boolean;
+  autoApplyTradeDetails?: boolean;
 }
 
 export interface IDailyJournal {

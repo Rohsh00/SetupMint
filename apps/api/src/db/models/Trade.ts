@@ -11,6 +11,7 @@ import {
   ITradeSetup,
   ICustomLadderRules,
   IExecutionSlippage,
+  ITradeAiAnalysis,
 } from '@tradevault/shared';
 import { deriveSessionFromTime } from '@tradevault/financial-engine';
 
@@ -241,6 +242,7 @@ export interface ITradeDoc extends Document {
   customLadderRules?: ICustomLadderRules;
   executedLadderSteps?: string[];
   screenshotIds: mongoose.Types.ObjectId[];
+  aiAnalysis?: ITradeAiAnalysis;
   auditLog: Array<{
     action: string;
     timestamp: Date;
@@ -597,6 +599,43 @@ const TradeSchema = new Schema<ITradeDoc>(
     screenshotIds: [{ type: Schema.Types.ObjectId, ref: 'Attachment' }],
     customLadderRules: { type: Schema.Types.Mixed },
     executedLadderSteps: [{ type: String }],
+    aiAnalysis: {
+      generatedAt: { type: Date },
+      modelUsed: { type: String },
+      setupType: { type: String },
+      marketStructure: { type: String, enum: ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'] },
+      executionScore: { type: Number },
+      disciplineScore: { type: Number },
+      confidence: { type: Number },
+      chartAnalysis: {
+        hasVisionImage: { type: Boolean, default: false },
+        candleContext: { type: String },
+        keyLevelsObserved: [{ type: String }],
+        confluences: [{ type: String }],
+        trendBias: { type: String, enum: ['BULLISH', 'BEARISH', 'NEUTRAL'] },
+        summary: { type: String },
+      },
+      entryReview: {
+        rating: { type: String },
+        summary: { type: String },
+        slippagePoints: { type: Number },
+      },
+      riskManagement: {
+        stopPlacementRating: { type: String },
+        summary: { type: String },
+        riskRewardRatio: { type: Number },
+      },
+      exitReview: {
+        rating: { type: String },
+        summary: { type: String },
+        efficiencyPercent: { type: Number },
+        rLeftOnTable: { type: Number },
+      },
+      identifiedMistakes: [{ type: String }],
+      suggestedTags: [{ type: String }],
+      lessonsLearned: { type: String },
+      autoApplied: { type: Boolean, default: false },
+    },
     auditLog: [
       {
         action: { type: String, required: true },

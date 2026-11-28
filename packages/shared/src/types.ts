@@ -1244,6 +1244,9 @@ export interface IUserAiSettings {
   hasGeminiApiKey?: boolean;
   enabled?: boolean;
   model?: string;
+  provider?: 'GEMINI' | 'OLLAMA' | 'LOCAL_OPENAI';
+  localEndpoint?: string;
+  localModel?: string;
   autoAnalyzeTrades?: boolean;
   autoApplyTradeDetails?: boolean;
   dailyRequestLimit?: number;
@@ -1460,6 +1463,82 @@ export interface IAiCopilotSuggestion {
   title: string;
   prompt: string;
   category: 'PERFORMANCE' | 'PSYCHOLOGY' | 'STRATEGY' | 'RISK';
+}
+
+export interface IOcrStatementParseResult {
+  brokerDetected?: string;
+  statementDate?: string;
+  totalTradesFound: number;
+  trades: Array<{
+    symbol: string;
+    direction: 'LONG' | 'SHORT';
+    quantity: number;
+    entryPrice: number;
+    exitPrice?: number;
+    entryTime?: string;
+    exitTime?: string;
+    orderId?: string;
+    netPnL?: number;
+    grossPnL?: number;
+    totalCosts?: number;
+    charges?: Record<string, number>;
+  }>;
+  rawTextPreview?: string;
+  confidenceScore: number;
+  modelUsed?: string;
+}
+
+export interface IAiEdgeMiningInsight {
+  id: string;
+  dimension: 'TIME_OF_DAY' | 'DAY_OF_WEEK' | 'HOLDING_DURATION' | 'CONFLUENCE_COMBO' | 'SLIPPAGE_DRAG';
+  title: string;
+  verdict: 'POSITIVE_EDGE' | 'CRITICAL_LEAK' | 'NEUTRAL';
+  sampleSize: number;
+  winRate: number;
+  profitFactor: number;
+  netPnL: number;
+  comparisonBaseline: string;
+  actionableDirective: string;
+}
+
+export interface IAiEdgeMiningReport {
+  generatedAt: string;
+  totalTradesSampled: number;
+  overallWinRate: number;
+  overallProfitFactor: number;
+  insights: IAiEdgeMiningInsight[];
+  topPositiveEdge?: IAiEdgeMiningInsight;
+  biggestSurrenderedLeak?: IAiEdgeMiningInsight;
+}
+
+export interface IAiWhatIfSimulationInput {
+  scenarioType: 'REMOVE_REVENGE' | 'TRAIL_STOP_1R' | 'TIME_FILTER' | 'MAX_TRADES_CAP' | 'CUSTOM';
+  customParams?: Record<string, any>;
+  scopeKey?: string;
+  accountId?: string;
+}
+
+export interface IAiWhatIfSimulationResult {
+  scenarioName: string;
+  baseline: {
+    tradesCount: number;
+    netPnL: number;
+    winRate: number;
+    profitFactor: number;
+    maxDrawdown: number;
+  };
+  simulated: {
+    tradesCount: number;
+    netPnL: number;
+    winRate: number;
+    profitFactor: number;
+    maxDrawdown: number;
+  };
+  deltaPnL: number;
+  deltaWinRate: number;
+  deltaDrawdown: number;
+  aiSynthesis: string;
+  modelUsed?: string;
 }
 
 export interface IDailyJournal {

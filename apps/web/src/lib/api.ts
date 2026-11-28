@@ -1204,6 +1204,37 @@ export const api = {
         success: boolean;
         data: import('@tradevault/shared').IAiCopilotSuggestion[];
       }>(`/ai/copilot/suggestions${scopeKey ? `?scopeKey=${encodeURIComponent(scopeKey)}` : ''}`),
+    parseStatement: (input: {
+      textContent?: string;
+      imageBase64?: string;
+      mimeType?: string;
+      brokerHint?: string;
+    }) =>
+      request<{
+        success: boolean;
+        data: import('@tradevault/shared').IOcrStatementParseResult;
+      }>('/ai/parse-statement', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    getEdgeMining: (params: { scopeKey?: string; accountId?: string; limit?: number } = {}) => {
+      const q = new URLSearchParams();
+      if (params.scopeKey) q.set('scopeKey', params.scopeKey);
+      if (params.accountId) q.set('accountId', params.accountId);
+      if (params.limit) q.set('limit', String(params.limit));
+      return request<{
+        success: boolean;
+        data: import('@tradevault/shared').IAiEdgeMiningReport;
+      }>(`/ai/edge-mining?${q.toString()}`);
+    },
+    runWhatIf: (input: import('@tradevault/shared').IAiWhatIfSimulationInput) =>
+      request<{
+        success: boolean;
+        data: import('@tradevault/shared').IAiWhatIfSimulationResult;
+      }>('/ai/what-if', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
   },
 };
 

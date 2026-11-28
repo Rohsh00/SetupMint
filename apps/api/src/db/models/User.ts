@@ -29,6 +29,9 @@ export interface IUserDoc extends Document {
     geminiApiKey?: string;
     enabled?: boolean;
     model?: string;
+    provider?: 'GEMINI' | 'OLLAMA' | 'LOCAL_OPENAI';
+    localEndpoint?: string;
+    localModel?: string;
     autoAnalyzeTrades?: boolean;
     autoApplyTradeDetails?: boolean;
     dailyRequestLimit?: number;
@@ -228,6 +231,9 @@ const UserSchema = new Schema<IUserDoc>(
       geminiApiKey: { type: String },
       enabled: { type: Boolean, default: true },
       model: { type: String, default: 'gemini-2.5-flash' },
+      provider: { type: String, enum: ['GEMINI', 'OLLAMA', 'LOCAL_OPENAI'], default: 'GEMINI' },
+      localEndpoint: { type: String, default: 'http://localhost:11434' },
+      localModel: { type: String, default: 'llama3.3:8b' },
       autoAnalyzeTrades: { type: Boolean, default: true },
       autoApplyTradeDetails: { type: Boolean, default: false },
       dailyRequestLimit: { type: Number, default: 1500 },

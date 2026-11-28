@@ -141,55 +141,68 @@ export class TradeAiAnalyzerService {
       }
     }
 
-    // 3. Search for Chart Attachments (Images, including rasterized SVG auto-charts)
-    let chartImageBase64: string | null = null;
-    let chartImageMime: string | null = null;
+    // 3. Search for Chart Attachments (Multi-Timeframe Vision: up to 3 charts)
+    const chartImages: Array<{ base64: string; mime: string; filename?: string }> = [];
 
     try {
       const attachments = await Attachment.find({
         userId: uId,
         tradeId: tId,
-      }).sort({ createdAt: -1 }).lean();
+      }).sort({ createdAt: 1 }).lean();
 
-      // Look for PNG, JPEG, WEBP images, or SVG auto-charts
-      const imageAtt = attachments.find((a) =>
+      // Look for PNG, JPEG, WEBP images, or SVG auto-charts (up to 3 for MTF analysis)
+      const imageAtts = attachments.filter((a) =>
         ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'].includes(a.mimeType?.toLowerCase()) ||
         a.category === 'AUTO_CHART'
-      );
+      ).slice(0, 3);
 
-      if (imageAtt && imageAtt.storedFilename) {
-        const storage = getStorage();
-        const stream = await storage.read(imageAtt.storedFilename);
-        const buffer = await streamToBuffer(stream);
+      const storage = getStorage();
+      for (const imageAtt of imageAtts) {
+        if (!imageAtt.storedFilename) continue;
+        try {
+          const stream = await storage.read(imageAtt.storedFilename);
+          const buffer = await streamToBuffer(stream);
 
-        if (buffer && buffer.length > 0) {
-          const isSvg =
-            imageAtt.mimeType?.toLowerCase() === 'image/svg+xml' ||
-            imageAtt.storedFilename.toLowerCase().endsWith('.svg');
+          if (buffer && buffer.length > 0) {
+            const isSvg =
+              imageAtt.mimeType?.toLowerCase() === 'image/svg+xml' ||
+              imageAtt.storedFilename.toLowerCase().endsWith('.svg');
 
-          if (isSvg) {
-            try {
-              // Convert SVG chart to crisp PNG for Gemini Vision
-              const pngBuffer = await sharp(buffer)
-                .png({ compressionLevel: 8 })
-                .toBuffer();
+            if (isSvg) {
+              try {
+                // Convert SVG chart to crisp PNG for Gemini Vision
+                const pngBuffer = await sharp(buffer)
+                  .png({ compressionLevel: 8 })
+                  .toBuffer();
 
-              if (pngBuffer && pngBuffer.length <= 4 * 1024 * 1024) {
-                chartImageBase64 = pngBuffer.toString('base64');
-                chartImageMime = 'image/png';
+                if (pngBuffer && pngBuffer.length <= 4 * 1024 * 1024) {
+                  chartImages.push({
+                    base64: pngBuffer.toString('base64'),
+                    mime: 'image/png',
+                    filename: imageAtt.originalName || 'Auto Chart',
+                  });
+                }
+              } catch (svgErr: any) {
+                console.warn(`[TradeAiAnalyzer] Failed to rasterize SVG chart to PNG:`, svgErr.message);
               }
-            } catch (svgErr: any) {
-              console.warn(`[TradeAiAnalyzer] Failed to rasterize SVG chart to PNG:`, svgErr.message);
+            } else if (buffer.length <= 4 * 1024 * 1024) {
+              chartImages.push({
+                base64: buffer.toString('base64'),
+                mime: imageAtt.mimeType,
+                filename: imageAtt.originalName || 'Chart',
+              });
             }
-          } else if (buffer.length <= 4 * 1024 * 1024) {
-            chartImageBase64 = buffer.toString('base64');
-            chartImageMime = imageAtt.mimeType;
           }
+        } catch (readErr: any) {
+          console.warn(`[TradeAiAnalyzer] Could not read chart attachment ${imageAtt.storedFilename}:`, readErr.message);
         }
       }
     } catch (attErr: any) {
-      console.warn(`[TradeAiAnalyzer] Could not fetch chart attachment for vision:`, attErr.message);
+      console.warn(`[TradeAiAnalyzer] Could not fetch chart attachments for vision:`, attErr.message);
     }
+
+    const chartImageBase64 = chartImages[0]?.base64 || null;
+    const chartImageMime = chartImages[0]?.mime || null;
 
     // 4. Fetch User's Active Playbook Strategies
     const availableStrategies = await Strategy.find({ userId: uId, isActive: true }).lean();
@@ -236,6 +249,7 @@ export class TradeAiAnalyzerService {
           candleContextStr,
           chartImageBase64,
           chartImageMime,
+          chartImages,
           availableStrategies,
           preferredModel: user?.aiSettings?.model,
         });
@@ -778,10 +792,11 @@ export class TradeAiAnalyzerService {
     candleContextStr: string;
     chartImageBase64: string | null;
     chartImageMime: string | null;
+    chartImages?: Array<{ base64: string; mime: string; filename?: string }>;
     availableStrategies?: any[];
     preferredModel?: string;
   }): Promise<ITradeAiAnalysis | null> {
-    const { apiKey, userId, trade, quant, candleContextStr, chartImageBase64, chartImageMime, availableStrategies, preferredModel } = params;
+    const { apiKey, userId, trade, quant, candleContextStr, chartImageBase64, chartImageMime, chartImages, availableStrategies, preferredModel } = params;
 
     const strategiesSummary =
       availableStrategies && availableStrategies.length > 0
@@ -845,7 +860,20 @@ User's Playbook Strategies to Match:
 ${strategiesSummary}`;
 
     const parts: any[] = [];
-    if (chartImageBase64 && chartImageMime) {
+    if (chartImages && chartImages.length > 0) {
+      chartImages.forEach((img, idx) => {
+        parts.push({
+          inlineData: {
+            mimeType: img.mime,
+            data: img.base64,
+          },
+        });
+      });
+      const mtfText = chartImages.length > 1
+        ? `Inspect these ${chartImages.length} trade chart images (Higher Timeframe structure and Lower Timeframe entry execution) and the following telemetry to provide a multi-timeframe post-trade analysis:\n${tradePrompt}`
+        : `Inspect this trade chart image and the following trade telemetry to provide a professional post-trade analysis:\n${tradePrompt}`;
+      parts.push({ text: mtfText });
+    } else if (chartImageBase64 && chartImageMime) {
       parts.push({
         inlineData: {
           mimeType: chartImageMime,
@@ -912,7 +940,12 @@ ${strategiesSummary}`;
 
         return {
           generatedAt: new Date().toISOString(),
-          modelUsed: chartImageBase64 ? `${model} (Vision)` : model,
+          modelUsed:
+            chartImages && chartImages.length > 1
+              ? `${model} (Multi-Timeframe Vision)`
+              : chartImageBase64
+              ? `${model} (Vision)`
+              : model,
           setupType: String(p.setupType || quant.setupType),
           matchedStrategyId: quant.matchedStrategyId,
           matchedStrategyName: p.matchedStrategyName || quant.matchedStrategyName,

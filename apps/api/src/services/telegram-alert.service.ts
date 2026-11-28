@@ -56,6 +56,7 @@ import sharp from 'sharp';
 import { AudioChimeService } from './audio-chime.service.js';
 import { AiCoachService } from './ai-coach.service.js';
 import { AiCopilotService } from './ai-copilot.service.js';
+import { AiVoiceJournalService } from './ai-voice-journal.service.js';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -3652,6 +3653,42 @@ export class TelegramAlertService {
       botToken = rawToken ? (safeDecryptSecret(rawToken) || (rawToken.startsWith('enc:') ? undefined : rawToken)) : undefined;
     }
     if (!botToken) return;
+
+    // Handle Voice Message & Audio Journaling
+    if (msg.voice?.file_id || msg.audio?.file_id) {
+      const fileId = msg.voice?.file_id || msg.audio?.file_id;
+      await this.sendMessage(botToken, chatId, '🎙️ <i>Processing your voice reflection with AI...</i>');
+      try {
+        const result = await AiVoiceJournalService.processVoiceMessage({
+          userId: user._id,
+          botToken,
+          fileId,
+          caption: msg.caption,
+        });
+        const stars = '⭐'.repeat(result.disciplineScore);
+        await this.sendMessage(
+          botToken,
+          chatId,
+          `✅ <b>Voice Reflection Saved to Journal</b>\n` +
+            `📅 <b>Date:</b> <code>${result.journalDate}</code>\n` +
+            `🧠 <b>Emotional Tone:</b> <code>${result.emotionalState}</code> | <b>Discipline:</b> ${stars}\n\n` +
+            `📝 <b>Transcribed Notes:</b>\n<i>"${result.transcription}"</i>\n\n` +
+            `💡 <b>Key Lesson Extracted:</b>\n${result.lessonsLearned}`,
+          [
+            [
+              { text: '📅 Daily Summary', callback_data: 'cmd_summary' },
+              { text: '🧠 AI Coach', callback_data: 'cmd_coach' },
+            ],
+            [
+              { text: '📌 Live Cockpit', callback_data: 'cmd_refresh_cockpit' },
+            ],
+          ]
+        );
+      } catch (vErr: any) {
+        await this.sendMessage(botToken, chatId, `❌ Failed to process voice reflection: ${vErr.message}`);
+      }
+      return;
+    }
 
     try {
       // 1b. Check if voice note or audio comes with a command caption or transcription

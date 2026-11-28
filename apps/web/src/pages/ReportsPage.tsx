@@ -46,6 +46,7 @@ import { DateRangeFilter } from '../components/ui/DateRangeFilter.js';
 import { useDateRange } from '../context/DateRangeContext.js';
 import { useAccountScope, useAccountCapabilities } from '../context/AccountScopeContext.js';
 import { HelpHint } from '../components/help/index.js';
+import { AiStatementImportModal } from '../components/reports/AiStatementImportModal.js';
 
 export function ReportsPage() {
   const muiTheme = useTheme();
@@ -78,6 +79,7 @@ export function ReportsPage() {
   const [importResult, setImportResult] = useState<any>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [undoTargetBatch, setUndoTargetBatch] = useState<string | null>(null);
+  const [isAiStatementModalOpen, setIsAiStatementModalOpen] = useState(false);
 
   React.useEffect(() => {
     if (scopeAccountId) {
@@ -375,16 +377,38 @@ export function ReportsPage() {
       {/* CSV Import Section */}
       <Card variant="outlined" sx={{ p: 1 }}>
         <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <UploadFileRounded sx={{ color: 'primary.main' }} />
-                Smart Broker CSV Import
+                Smart Broker CSV & Statement Import
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Auto-detects Zerodha, FYERS, Angel One, and Upstox tradebooks. Groups raw executions into FIFO round-trip trades with auto-charges.
               </Typography>
             </Box>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setIsAiStatementModalOpen(true)}
+              startIcon={<AutoAwesomeRounded sx={{ color: '#8b5cf6' }} />}
+              sx={{
+                fontWeight: 600,
+                textTransform: 'none',
+                borderColor: 'rgba(139, 92, 246, 0.4)',
+                color: '#8b5cf6',
+                borderRadius: 2,
+                px: 2,
+                py: 0.8,
+                bgcolor: 'rgba(139, 92, 246, 0.04)',
+                '&:hover': {
+                  borderColor: '#8b5cf6',
+                  bgcolor: 'rgba(139, 92, 246, 0.1)',
+                },
+              }}
+            >
+              AI Contract Note OCR (PDF / Image)
+            </Button>
           </Box>
 
           {importError && (
@@ -996,6 +1020,13 @@ export function ReportsPage() {
           }
         }}
         onCancel={() => setUndoTargetBatch(null)}
+      />
+
+      {/* Multimodal AI Statement & Contract Note Importer Modal */}
+      <AiStatementImportModal
+        open={isAiStatementModalOpen}
+        onClose={() => setIsAiStatementModalOpen(false)}
+        targetAccountId={selectedAccountId || undefined}
       />
     </Box>
   );

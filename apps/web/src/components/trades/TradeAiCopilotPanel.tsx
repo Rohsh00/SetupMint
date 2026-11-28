@@ -44,6 +44,8 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
       api.trades.analyzeAi(tradeId, options),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['trade', tradeId] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['strategy'] });
       onTradeUpdated?.();
       toast.success(res?.data?.setupType ? `AI Analysis: ${res.data.setupType}` : 'AI trade analysis complete!');
     },
@@ -54,10 +56,16 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
 
   const applyMutation = useMutation({
     mutationFn: () => api.trades.applyAiDetails(tradeId),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['trade', tradeId] });
+      queryClient.invalidateQueries({ queryKey: ['trades'] });
+      queryClient.invalidateQueries({ queryKey: ['strategy'] });
       onTradeUpdated?.();
-      toast.success('AI details applied to trade thesis, psychology, and tags!');
+      toast.success(
+        res?.data?.strategyName || res?.data?.setup?.variantKey
+          ? `AI details applied: ${res.data.strategyName || ''} (${res.data?.setup?.variantKey || 'Classified'})`
+          : 'AI details applied to trade setup, strategy, thesis, and psychology!'
+      );
     },
     onError: (err: any) => {
       toast.error(err?.message || 'Failed to apply AI details');
@@ -142,6 +150,19 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
                       color: isDark ? '#e9d5ff' : '#4f46e5',
                     }}
                   />
+                  {ai.matchedStrategyName && (
+                    <Chip
+                      size="small"
+                      label={`Playbook: ${ai.matchedStrategyName}${ai.matchedVariantKey ? ` [${ai.matchedVariantKey}]` : ''}`}
+                      sx={{
+                        fontWeight: 800,
+                        fontSize: '0.7rem',
+                        height: 22,
+                        bgcolor: isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgba(59, 130, 246, 0.12)',
+                        color: isDark ? '#93c5fd' : '#1d4ed8',
+                      }}
+                    />
+                  )}
                   <Chip
                     size="small"
                     label={`Execution: ${ai.executionScore}/10`}
@@ -513,17 +534,17 @@ export function TradeAiCopilotPanel({ trade, onTradeUpdated }: TradeAiCopilotPan
             </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Tooltip title="Writes AI-detected setup, thesis, confluences, mistakes, and lessons directly into this trade record">
+              <Tooltip title="Applies AI-detected setup variant, playbook strategy, thesis rationale, confluences, discipline rating, leaks, and key lessons directly into this trade record">
                 <Button
                   size="small"
                   variant="contained"
                   color="primary"
-                  disabled={applyMutation.isPending || ai.autoApplied}
+                  disabled={applyMutation.isPending}
                   onClick={() => applyMutation.mutate()}
                   startIcon={applyMutation.isPending ? <CircularProgress size={14} color="inherit" /> : <AssignmentTurnedInRoundedIcon fontSize="small" />}
                   sx={{ borderRadius: 1.5, fontSize: '0.75rem', fontWeight: 700, textTransform: 'none' }}
                 >
-                  {applyMutation.isPending ? 'Applying...' : ai.autoApplied ? 'Details Applied' : '✨ Apply AI Details to Trade'}
+                  {applyMutation.isPending ? 'Applying...' : ai.autoApplied ? '✓ Sync / Re-apply AI Details' : '✨ Apply AI Details to Trade'}
                 </Button>
               </Tooltip>
             </Box>

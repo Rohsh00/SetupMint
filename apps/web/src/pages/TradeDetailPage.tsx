@@ -891,7 +891,11 @@ export function TradeDetailPage() {
       {/* AI Trade & Chart Copilot Panel */}
       <TradeAiCopilotPanel
         trade={trade}
-        onTradeUpdated={() => queryClient.invalidateQueries({ queryKey: ['trade', id] })}
+        onTradeUpdated={() => {
+          queryClient.invalidateQueries({ queryKey: ['trade', id] });
+          queryClient.invalidateQueries({ queryKey: ['trades'] });
+          queryClient.invalidateQueries({ queryKey: ['strategy'] });
+        }}
       />
 
       {/* Playbook Strategy & Setup Variant Classification Card */}

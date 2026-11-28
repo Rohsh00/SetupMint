@@ -13,11 +13,12 @@ import type { Readable } from 'node:stream';
 import { Buffer } from 'node:buffer';
 import sharp from 'sharp';
 import { ITradeAiAnalysis } from '@tradevault/shared';
-import { Trade, Attachment, TradeCandleSnapshot, User } from '../db/models/index.js';
+import { Trade, Attachment, TradeCandleSnapshot, User, Strategy } from '../db/models/index.js';
 import { config } from '../config.js';
 import { safeDecryptSecret } from './crypto.service.js';
 import { getStorage } from '../storage/index.js';
 import { detectHtfTrend4h, detectLtfSetup5m } from '@tradevault/financial-engine';
+import { PatternRecognitionService } from './pattern-recognition.service.js';
 
 async function streamToBuffer(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -189,7 +190,10 @@ export class TradeAiAnalyzerService {
       console.warn(`[TradeAiAnalyzer] Could not fetch chart attachment for vision:`, attErr.message);
     }
 
-    // 4. Build Deterministic Quant Analysis (Guaranteed 100% Free Fallback)
+    // 4. Fetch User's Active Playbook Strategies
+    const availableStrategies = await Strategy.find({ userId: uId, isActive: true }).lean();
+
+    // 5. Build Deterministic Quant Analysis (Guaranteed 100% Free Fallback)
     const quantAnalysis = this.generateQuantAnalysis({
       trade,
       direction,
@@ -207,9 +211,10 @@ export class TradeAiAnalyzerService {
       stopMoves,
       candleContextStr,
       hasVisionImage: Boolean(chartImageBase64),
+      availableStrategies,
     });
 
-    // 5. Try Google Gemini Flash Multimodal Synthesis (if key configured)
+    // 6. Try Google Gemini Flash Multimodal Synthesis (if key configured)
     let activeKey = '';
     if (user?.aiSettings?.geminiApiKey) {
       activeKey = safeDecryptSecret(user.aiSettings.geminiApiKey) || '';
@@ -229,6 +234,8 @@ export class TradeAiAnalyzerService {
           candleContextStr,
           chartImageBase64,
           chartImageMime,
+          availableStrategies,
+          preferredModel: user?.aiSettings?.model,
         });
 
         if (geminiResult) {
@@ -239,10 +246,10 @@ export class TradeAiAnalyzerService {
       }
     }
 
-    // 6. Save analysis to trade
+    // 7. Save analysis to trade
     trade.aiAnalysis = finalAnalysis;
 
-    // 7. Auto-Apply if requested or if user preference enabled
+    // 8. Auto-Apply if requested or if user preference enabled
     const shouldAutoApply =
       options.autoApply === true ||
       (options.autoApply !== false && user?.aiSettings?.autoApplyTradeDetails === true);
@@ -257,38 +264,206 @@ export class TradeAiAnalyzerService {
   }
 
   /**
-   * Applies structured AI analysis into trade thesis, psychology, and tags.
+   * Applies structured AI analysis into trade setup, strategy, thesis, psychology, and tags.
    */
   static async applyAnalysisToTrade(
     tradeOrId: any,
-    analysis?: ITradeAiAnalysis,
-    options?: { overwrite?: boolean }
+    userIdOrAnalysis?: any,
+    analysisOrOptions?: any,
+    maybeOptions?: any
   ): Promise<any> {
     let trade: any;
+    let userId: mongoose.Types.ObjectId | undefined;
+    let ai: ITradeAiAnalysis | undefined;
+    let options: { overwrite?: boolean } = {};
+
     if (tradeOrId && tradeOrId._id) {
       trade = tradeOrId;
-    } else {
-      trade = await Trade.findById(tradeOrId);
+      userId = trade.userId;
+    }
+
+    if (typeof userIdOrAnalysis === 'string' || userIdOrAnalysis instanceof mongoose.Types.ObjectId) {
+      userId = new mongoose.Types.ObjectId(userIdOrAnalysis);
+    } else if (
+      userIdOrAnalysis &&
+      typeof userIdOrAnalysis === 'object' &&
+      ('generatedAt' in userIdOrAnalysis || 'setupType' in userIdOrAnalysis || 'executionScore' in userIdOrAnalysis)
+    ) {
+      ai = userIdOrAnalysis;
+    }
+
+    if (analysisOrOptions && typeof analysisOrOptions === 'object') {
+      if ('generatedAt' in analysisOrOptions || 'setupType' in analysisOrOptions || 'executionScore' in analysisOrOptions) {
+        ai = analysisOrOptions;
+      } else if ('overwrite' in analysisOrOptions) {
+        options = analysisOrOptions;
+      }
+    }
+
+    if (maybeOptions && typeof maybeOptions === 'object' && 'overwrite' in maybeOptions) {
+      options = maybeOptions;
+    }
+
+    if (!trade) {
+      const query: any = { _id: tradeOrId };
+      if (userId) query.userId = userId;
+      trade = await Trade.findOne(query);
     }
 
     if (!trade) {
       throw new Error('Trade not found');
     }
 
-    const ai = analysis || trade.aiAnalysis;
+    if (!userId && trade.userId) {
+      userId = trade.userId;
+    }
+
+    if (!ai) {
+      ai = trade.aiAnalysis;
+    }
+
     if (!ai) {
       throw new Error('No AI analysis available for this trade to apply');
     }
 
     const overwrite = options?.overwrite === true;
 
-    // 1. Update Thesis
+    // 1. Update Strategy and Setup Variant
+    const hasStrategy = Boolean(trade.strategyId);
+    const hasVariant = Boolean(trade.setup?.variantKey && trade.setup?.variantStatus === 'CLASSIFIED');
+
+    if (!hasStrategy || !hasVariant || overwrite) {
+      let availableStrategies: any[] = [];
+      try {
+        if (Strategy && typeof Strategy.find === 'function' && trade.userId) {
+          availableStrategies = (await Strategy.find({ userId: trade.userId, isActive: true }).lean()) || [];
+        }
+      } catch {
+        availableStrategies = [];
+      }
+
+      let assignedStrategyId: mongoose.Types.ObjectId | undefined = trade.strategyId;
+      let assignedStrategyName: string | undefined = trade.strategyName;
+      let assignedVariantKey: string | undefined = trade.setup?.variantKey;
+
+      // 1A. Check if AI analysis directly provided matched strategy/variant
+      if (ai.matchedStrategyId || ai.matchedStrategyName) {
+        const found = availableStrategies.find(
+          (s) =>
+            (ai.matchedStrategyId && String(s._id) === String(ai.matchedStrategyId)) ||
+            (ai.matchedStrategyName && s.name.toLowerCase() === ai.matchedStrategyName.toLowerCase())
+        );
+        if (found) {
+          assignedStrategyId = found._id;
+          assignedStrategyName = found.name;
+          if (ai.matchedVariantKey) {
+            const v = found.variants?.find((v: any) => v.key.toUpperCase() === ai.matchedVariantKey!.toUpperCase());
+            if (v) {
+              assignedVariantKey = v.key;
+            }
+          }
+        } else {
+          // If no playbook doc in database matches, preserve the direct AI match
+          if (ai.matchedStrategyName) assignedStrategyName = ai.matchedStrategyName;
+          if (ai.matchedVariantKey) assignedVariantKey = ai.matchedVariantKey;
+          if (ai.matchedStrategyId) {
+            try {
+              assignedStrategyId = new mongoose.Types.ObjectId(ai.matchedStrategyId);
+            } catch {
+              // Ignore invalid ObjectId format
+            }
+          }
+        }
+      }
+
+      // 1B. Try PatternRecognitionService if candles or classification available
+      if ((!assignedStrategyId || !assignedVariantKey) && trade._id && trade.userId) {
+        try {
+          const prResult = await PatternRecognitionService.classifyTrade(trade._id, trade.userId);
+          if (prResult?.strategyId && prResult?.variantKey) {
+            assignedStrategyId = new mongoose.Types.ObjectId(prResult.strategyId);
+            assignedStrategyName = prResult.strategyName;
+            assignedVariantKey = prResult.variantKey;
+          }
+        } catch {
+          // Fallback to text & direction matching below
+        }
+      }
+
+      // 1C. Fallback matching against user's active strategies via setupType & direction
+      if ((!assignedStrategyId || !assignedVariantKey) && availableStrategies.length > 0) {
+        const direction = trade.direction || 'LONG';
+        const setupText = (ai.setupType || '').toLowerCase();
+
+        // Find strategy matching direction
+        let bestStrategy = availableStrategies.find((s) => {
+          const sName = s.name.toLowerCase();
+          if (direction === 'LONG' && (sName.includes('bullish') || s.tags?.includes('Bullish'))) return true;
+          if (direction === 'SHORT' && (sName.includes('bearish') || s.tags?.includes('Bearish'))) return true;
+          return false;
+        }) || availableStrategies[0];
+
+        if (bestStrategy) {
+          assignedStrategyId = bestStrategy._id;
+          assignedStrategyName = bestStrategy.name;
+
+          // Find variant matching setup keywords
+          const variants = bestStrategy.variants || [];
+          let bestVariant = variants.find((v: any) => {
+            const vName = (v.name || '').toLowerCase();
+            const vKey = (v.key || '').toLowerCase();
+            if (setupText.includes('order block') && (vName.includes('order block') || vKey.includes('ob'))) return true;
+            if (setupText.includes('sweep') && (vName.includes('sweep') || vKey.includes('sweep') || vKey.includes('ssl') || vKey.includes('bsl'))) return true;
+            if (setupText.includes('breakout') && (vName.includes('breakout') || vKey.includes('bo'))) return true;
+            if (setupText.includes('pullback') && (vName.includes('pullback') || vName.includes('retracement') || vKey.includes('eql') || vKey.includes('eqh'))) return true;
+            return false;
+          }) || variants[0];
+
+          if (bestVariant) {
+            assignedVariantKey = bestVariant.key;
+          }
+        }
+      }
+
+      if (assignedStrategyId) {
+        trade.strategyId = assignedStrategyId;
+        trade.strategyName = assignedStrategyName;
+      }
+
+      if (!trade.setup) {
+        trade.setup = { variantStatus: 'UNCLASSIFIED' };
+      }
+
+      if (assignedVariantKey) {
+        trade.setup.variantKey = assignedVariantKey;
+        trade.setup.variantStatus = 'CLASSIFIED';
+      } else if (ai.setupType) {
+        trade.setup.variantKey = ai.setupType.toUpperCase().replace(/[^A-Z0-9]/g, '_').slice(0, 30);
+        trade.setup.variantStatus = 'CLASSIFIED';
+      }
+
+      if (!trade.setup.htfBias) {
+        trade.setup.htfBias =
+          ai.chartAnalysis?.trendBias ||
+          (ai.marketStructure === 'TRENDING_UP' ? 'BULLISH' : ai.marketStructure === 'TRENDING_DOWN' ? 'BEARISH' : 'NEUTRAL');
+      }
+      if (!trade.setup.executionTimeframe) {
+        trade.setup.executionTimeframe = '5m Confirmation';
+      }
+      if (!trade.setup.patternType && ai.setupType) {
+        trade.setup.patternType = ai.setupType;
+      }
+    }
+
+    // 2. Update Thesis
     if (!trade.thesis) {
       trade.thesis = { confluences: [], customTechnicalLabels: [] };
     }
 
     if (!trade.thesis.entryRationale || trade.thesis.entryRationale.trim() === '' || overwrite) {
-      trade.thesis.entryRationale = ai.entryReview?.summary || `Entered ${trade.direction} on ${ai.setupType}`;
+      trade.thesis.entryRationale =
+        ai.entryReview?.summary ||
+        `Entered ${trade.direction} on ${ai.setupType || trade.setup?.variantKey || 'technical pattern'}`;
     }
 
     if ((!trade.thesis.stopLossRationale || trade.thesis.stopLossRationale.trim() === '' || overwrite) && ai.riskManagement?.summary) {
@@ -299,23 +474,33 @@ export class TradeAiAnalyzerService {
       trade.thesis.exitRationale = ai.exitReview.summary;
     }
 
-    trade.thesis.marketStructure = ai.marketStructure;
+    if (ai.marketStructure) {
+      trade.thesis.marketStructure = ai.marketStructure;
+    }
+
+    if (ai.chartAnalysis?.summary && (!trade.thesis.higherTimeframeContext || overwrite)) {
+      trade.thesis.higherTimeframeContext = ai.chartAnalysis.summary;
+    }
 
     // Merge confluences
     const existingConfluences = new Set(trade.thesis.confluences || []);
     if (Array.isArray(ai.chartAnalysis?.confluences)) {
       for (const conf of ai.chartAnalysis.confluences) {
-        existingConfluences.add(conf as any);
+        if (conf && typeof conf === 'string' && conf.trim()) {
+          existingConfluences.add(conf.trim() as any);
+        }
       }
     }
     trade.thesis.confluences = Array.from(existingConfluences);
 
-    // 2. Update Psychology & Discipline
+    // 3. Update Psychology & Discipline
     if (!trade.psychology) {
       trade.psychology = { disciplineScore: 3, checklistCompleted: true, rulesFollowed: true, mistakes: [] };
     }
 
-    trade.psychology.disciplineScore = ai.disciplineScore;
+    if (ai.disciplineScore) {
+      trade.psychology.disciplineScore = ai.disciplineScore;
+    }
 
     if (!trade.psychology.lessonsLearned || trade.psychology.lessonsLearned.trim() === '' || overwrite) {
       trade.psychology.lessonsLearned = ai.lessonsLearned;
@@ -325,28 +510,47 @@ export class TradeAiAnalyzerService {
     const existingMistakes = new Set(trade.psychology.mistakes || []);
     if (Array.isArray(ai.identifiedMistakes)) {
       for (const m of ai.identifiedMistakes) {
-        existingMistakes.add(m);
+        if (m && typeof m === 'string' && m.trim()) {
+          existingMistakes.add(m.trim());
+        }
       }
     }
     trade.psychology.mistakes = Array.from(existingMistakes);
 
-    // 3. Merge Tags
+    // 4. Merge Tags
     const existingTags = new Set(trade.tags || []);
     if (ai.setupType) {
       existingTags.add(ai.setupType);
     }
+    if (trade.strategyName) {
+      existingTags.add(trade.strategyName);
+    }
+    if (trade.setup?.variantKey) {
+      existingTags.add(trade.setup.variantKey);
+    }
     if (Array.isArray(ai.suggestedTags)) {
       for (const tag of ai.suggestedTags) {
-        existingTags.add(tag);
+        if (tag && typeof tag === 'string' && tag.trim()) {
+          existingTags.add(tag.trim());
+        }
       }
     }
     trade.tags = Array.from(existingTags);
 
-    // 4. Mark autoApplied
+    // 5. Update aiAnalysis telemetry
     if (trade.aiAnalysis) {
       trade.aiAnalysis.autoApplied = true;
+      if (trade.strategyId) trade.aiAnalysis.matchedStrategyId = trade.strategyId.toString();
+      if (trade.strategyName) trade.aiAnalysis.matchedStrategyName = trade.strategyName;
+      if (trade.setup?.variantKey) trade.aiAnalysis.matchedVariantKey = trade.setup.variantKey;
     } else {
-      trade.aiAnalysis = { ...ai, autoApplied: true };
+      trade.aiAnalysis = {
+        ...ai,
+        autoApplied: true,
+        matchedStrategyId: trade.strategyId ? trade.strategyId.toString() : undefined,
+        matchedStrategyName: trade.strategyName,
+        matchedVariantKey: trade.setup?.variantKey,
+      };
     }
 
     trade.auditLog.push({
@@ -356,6 +560,8 @@ export class TradeAiAnalyzerService {
       details: {
         modelUsed: ai.modelUsed,
         setupType: ai.setupType,
+        strategyName: trade.strategyName,
+        variantKey: trade.setup?.variantKey,
         appliedAt: new Date().toISOString(),
       },
     });
@@ -384,6 +590,7 @@ export class TradeAiAnalyzerService {
     stopMoves: any;
     candleContextStr: string;
     hasVisionImage: boolean;
+    availableStrategies?: any[];
   }): ITradeAiAnalysis {
     const {
       direction,
@@ -470,6 +677,35 @@ export class TradeAiAnalyzerService {
     if (realizedR >= 2.0) suggestedTags.push('High-R Runner');
     if (discipline >= 4) suggestedTags.push('Disciplined Execution');
 
+    // Match Strategy & Variant from Playbook
+    let matchedStrategyName: string | undefined = ctx.trade.strategyName;
+    let matchedStrategyId: string | undefined = ctx.trade.strategyId ? String(ctx.trade.strategyId) : undefined;
+    let matchedVariantKey: string | undefined = ctx.trade.setup?.variantKey;
+
+    if ((!matchedStrategyName || !matchedVariantKey) && ctx.availableStrategies && ctx.availableStrategies.length > 0) {
+      const bestStrat =
+        ctx.availableStrategies.find((s: any) => {
+          const sName = (s.name || '').toLowerCase();
+          if (direction === 'LONG' && (sName.includes('bullish') || s.tags?.includes('Bullish'))) return true;
+          if (direction === 'SHORT' && (sName.includes('bearish') || s.tags?.includes('Bearish'))) return true;
+          return false;
+        }) || ctx.availableStrategies[0];
+
+      if (bestStrat) {
+        matchedStrategyId = String(bestStrat._id);
+        matchedStrategyName = bestStrat.name;
+        if (bestStrat.variants && bestStrat.variants.length > 0) {
+          const v = bestStrat.variants.find((v: any) => {
+            const vName = (v.name || '').toLowerCase();
+            const vKey = (v.key || '').toLowerCase();
+            const sType = setupType.toLowerCase();
+            return sType.includes(vName) || sType.includes(vKey);
+          }) || bestStrat.variants[0];
+          matchedVariantKey = v?.key;
+        }
+      }
+    }
+
     const keyLevels = [
       `Entry: ${entryPrice.toFixed(2)}`,
       initialStop ? `Initial SL: ${initialStop.toFixed(2)}` : 'No SL',
@@ -487,6 +723,9 @@ export class TradeAiAnalyzerService {
       generatedAt: new Date().toISOString(),
       modelUsed: 'deterministic-quant-engine',
       setupType,
+      matchedStrategyId,
+      matchedStrategyName,
+      matchedVariantKey,
       marketStructure,
       executionScore: execScore,
       disciplineScore: discipline,
@@ -536,14 +775,28 @@ export class TradeAiAnalyzerService {
     candleContextStr: string;
     chartImageBase64: string | null;
     chartImageMime: string | null;
+    availableStrategies?: any[];
+    preferredModel?: string;
   }): Promise<ITradeAiAnalysis | null> {
-    const { apiKey, trade, quant, candleContextStr, chartImageBase64, chartImageMime } = params;
+    const { apiKey, trade, quant, candleContextStr, chartImageBase64, chartImageMime, availableStrategies, preferredModel } = params;
+
+    const strategiesSummary =
+      availableStrategies && availableStrategies.length > 0
+        ? availableStrategies
+            .map(
+              (s: any) =>
+                `- Strategy: "${s.name}" (Variants: ${s.variants?.map((v: any) => `"${v.name}" [key: ${v.key}]`).join(', ') || 'Standard'})`
+            )
+            .join('\n')
+        : 'None configured';
 
     const systemPrompt = `You are SetupMint's Chief Trade Analyst and Institutional Chart Technician.
 Analyze this individual trade and its chart thoroughly.
 Return ONLY valid JSON matching this exact structure:
 {
   "setupType": "Specific technical setup name (e.g. Liquidity Sweep & Retest, Morning Breakout, Mean Reversion to VWAP, Order Block Rejection)",
+  "matchedStrategyName": "Exact name of matching strategy from user's playbook if applicable, or null",
+  "matchedVariantKey": "Exact key of matching variant from user's playbook (e.g. BULL-SSL-EQL) if applicable, or null",
   "marketStructure": "TRENDING_UP" | "TRENDING_DOWN" | "RANGING" | "VOLATILE",
   "executionScore": 1 to 10 (decimal allowed, e.g. 8.5),
   "disciplineScore": 1 to 5 (integer),
@@ -583,7 +836,10 @@ Net PnL: ${trade.calculated?.netPnL ?? 0}
 Holding Duration: ${trade.calculated?.holdingTimeMinutes ?? 0} minutes
 Excursion Metrics: MAE=${trade.calculated?.excursion?.maeR ?? 0}R, MFE=${trade.calculated?.excursion?.mfeR ?? 0}R, Left On Table=${trade.calculated?.excursion?.rLeftOnTable ?? 0}R
 Stop Moves: Widened=${trade.calculated?.stopMoveSummary?.widenedCount ?? 0}, Trailed=${trade.calculated?.stopMoveSummary?.trailedCount ?? 0}
-Candle Context: ${candleContextStr || 'No raw snapshot'}`;
+Candle Context: ${candleContextStr || 'No raw snapshot'}
+
+User's Playbook Strategies to Match:
+${strategiesSummary}`;
 
     const parts: any[] = [];
     if (chartImageBase64 && chartImageMime) {
@@ -603,13 +859,14 @@ Candle Context: ${candleContextStr || 'No raw snapshot'}`;
     }
 
     const candidateModels = [
+      preferredModel,
       'gemini-2.5-flash',
       'gemini-2.0-flash',
       'gemini-1.5-flash',
       'gemini-3.8-flash',
       'gemini-3.5-flash-lite',
       'gemini-flash-latest',
-    ];
+    ].filter(Boolean) as string[];
 
     for (const model of candidateModels) {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -647,6 +904,9 @@ Candle Context: ${candleContextStr || 'No raw snapshot'}`;
           generatedAt: new Date().toISOString(),
           modelUsed: chartImageBase64 ? `${model} (Vision)` : model,
           setupType: String(p.setupType || quant.setupType),
+          matchedStrategyId: quant.matchedStrategyId,
+          matchedStrategyName: p.matchedStrategyName || quant.matchedStrategyName,
+          matchedVariantKey: p.matchedVariantKey || quant.matchedVariantKey,
           marketStructure: ['TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'VOLATILE'].includes(p.marketStructure)
             ? p.marketStructure
             : quant.marketStructure,

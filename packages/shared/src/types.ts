@@ -1187,6 +1187,9 @@ export interface ITradeAiAnalysis {
   generatedAt: string;
   modelUsed: string;
   setupType: string;
+  matchedStrategyId?: string;
+  matchedStrategyName?: string;
+  matchedVariantKey?: string;
   marketStructure: 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'VOLATILE';
   executionScore: number;
   disciplineScore: number;

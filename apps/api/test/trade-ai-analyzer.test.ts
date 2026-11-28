@@ -243,7 +243,73 @@ describe('TradeAiAnalyzerService - Per-Trade AI & Chart Copilot', () => {
     expect(mockTrade.tags).toContain('Liquidity Sweep & Retest');
     expect(mockTrade.tags).toContain('A+ Setup');
     expect(mockTrade.aiAnalysis.autoApplied).toBe(true);
+    expect(mockTrade.setup.variantStatus).toBe('CLASSIFIED');
+    expect(mockTrade.setup.variantKey).toBeTruthy();
     expect(mockTrade.auditLog.length).toBe(1);
+    expect(mockSave).toHaveBeenCalled();
+  });
+
+  it('assigns strategy and setup variant key from AI analysis', async () => {
+    const mockSave = vi.fn().mockResolvedValue(true);
+    const mockStrategyId = new mongoose.Types.ObjectId();
+    const mockTrade: any = {
+      _id: new mongoose.Types.ObjectId(),
+      direction: 'LONG',
+      thesis: { confluences: [] },
+      psychology: { mistakes: [] },
+      setup: { variantStatus: 'UNCLASSIFIED' },
+      tags: [],
+      auditLog: [],
+      save: mockSave,
+    };
+
+    const analysisWithStrategy = {
+      generatedAt: new Date().toISOString(),
+      modelUsed: 'gemini-2.5-flash',
+      setupType: 'Bullish Order Block & Sweep',
+      matchedStrategyId: mockStrategyId.toString(),
+      matchedStrategyName: 'Bullish HTF Retracement',
+      matchedVariantKey: 'BULL-SSL-EQL',
+      marketStructure: 'TRENDING_UP',
+      executionScore: 9.2,
+      disciplineScore: 5,
+      confidence: 90,
+      chartAnalysis: {
+        hasVisionImage: false,
+        trendBias: 'BULLISH',
+        summary: 'Bullish market structure shift with displacement.',
+        confluences: ['Order block hold', 'Displacement'],
+        keyLevelsObserved: [],
+      },
+      entryReview: {
+        rating: 'EXCELLENT',
+        summary: 'Optimal entry at order block.',
+      },
+      riskManagement: {
+        stopPlacementRating: 'OPTIMAL',
+        summary: 'Stop under swing low.',
+      },
+      exitReview: {
+        rating: 'OPTIMAL',
+        summary: 'Closed at target.',
+      },
+      identifiedMistakes: [],
+      suggestedTags: ['OrderBlock', 'SMC'],
+      lessonsLearned: 'Patience at entry pays off.',
+      autoApplied: false,
+    };
+
+    await TradeAiAnalyzerService.applyAnalysisToTrade(mockTrade, analysisWithStrategy as any);
+
+    expect(mockTrade.strategyName).toBe('Bullish HTF Retracement');
+    expect(mockTrade.setup.variantKey).toBe('BULL-SSL-EQL');
+    expect(mockTrade.setup.variantStatus).toBe('CLASSIFIED');
+    expect(mockTrade.setup.htfBias).toBe('BULLISH');
+    expect(mockTrade.thesis.entryRationale).toBe('Optimal entry at order block.');
+    expect(mockTrade.psychology.disciplineScore).toBe(5);
+    expect(mockTrade.tags).toContain('Bullish Order Block & Sweep');
+    expect(mockTrade.tags).toContain('BULL-SSL-EQL');
+    expect(mockTrade.aiAnalysis.autoApplied).toBe(true);
     expect(mockSave).toHaveBeenCalled();
   });
 

@@ -1067,13 +1067,19 @@ export const tradeRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
   });
 
-  // Apply AI analysis details directly into trade fields (thesis, psychology, tags)
+  // Apply AI analysis details directly into trade fields (setup, strategy, thesis, psychology, tags)
   app.post('/:id/ai-apply', { preHandler: [validateObjectIdParam('id')] }, async (req: any, reply) => {
     try {
-      const updated = await TradeAiAnalyzerService.applyAnalysisToTrade(req.params.id, req.user!.id);
+      const overwrite = req.body?.overwrite === true;
+      const updated = await TradeAiAnalyzerService.applyAnalysisToTrade(
+        req.params.id,
+        req.user!.id,
+        undefined,
+        { overwrite }
+      );
       return reply.send({
         success: true,
-        message: 'AI details applied to trade successfully',
+        message: 'AI details applied to trade setup, strategy, thesis, and psychology',
         data: updated,
       });
     } catch (err: any) {

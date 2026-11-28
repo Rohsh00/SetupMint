@@ -47,6 +47,7 @@ export interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   onOpenNewTrade: () => void;
+  onOpenCopilot?: (initialQuestion?: string) => void;
 }
 
 interface PaletteItem {
@@ -60,7 +61,7 @@ interface PaletteItem {
   action: () => void | Promise<void>;
 }
 
-export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, onOpenNewTrade, onOpenCopilot }: CommandPaletteProps) {
   const muiTheme = useMuiTheme();
   const isDark = muiTheme.palette.mode === 'dark';
   const navigate = useNavigate();
@@ -239,6 +240,19 @@ export function CommandPalette({ open, onClose, onOpenNewTrade }: CommandPalette
     }
 
     actionList.push(
+      {
+        id: 'action-ask-copilot',
+        category: 'ACTIONS',
+        title: query ? `Ask SetupMint Copilot: "${query}"` : 'Ask SetupMint Copilot...',
+        subtitle: 'Conversational quant assistant for win rates, leaks, and strategy edge',
+        icon: AutoAwesomeRoundedIcon,
+        shortcut: '⌘J',
+        keywords: ['ai', 'copilot', 'ask', 'chat', 'assistant', 'gemini', 'question', 'help', 'winrate', 'pnl', 'leak', 'revenge'],
+        action: () => {
+          onClose();
+          onOpenCopilot?.(query || undefined);
+        },
+      },
       {
         id: 'action-ai-briefing',
         category: 'ACTIONS',

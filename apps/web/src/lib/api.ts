@@ -1179,5 +1179,31 @@ export const api = {
         method: 'POST',
       }),
   },
+
+  // Conversational Trading Copilot & AI Services
+  ai: {
+    askCopilot: (input: {
+      question: string;
+      scopeKey?: string;
+      accountId?: string;
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    }) =>
+      request<{
+        success: boolean;
+        data: {
+          message: import('@tradevault/shared').IAiCopilotMessage;
+          latencyMs?: number;
+          quotaRemaining?: number;
+        };
+      }>('/ai/copilot', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    getSuggestions: (scopeKey?: string) =>
+      request<{
+        success: boolean;
+        data: import('@tradevault/shared').IAiCopilotSuggestion[];
+      }>(`/ai/copilot/suggestions${scopeKey ? `?scopeKey=${encodeURIComponent(scopeKey)}` : ''}`),
+  },
 };
 

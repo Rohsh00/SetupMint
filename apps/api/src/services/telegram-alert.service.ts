@@ -55,6 +55,7 @@ import { ITradeCandle, DayRiskRegime, IAdaptiveDayRiskState, IAdaptiveDayRiskTie
 import sharp from 'sharp';
 import { AudioChimeService } from './audio-chime.service.js';
 import { AiCoachService } from './ai-coach.service.js';
+import { AiCopilotService } from './ai-copilot.service.js';
 
 export interface ITelegramInlineButton {
   text: string;
@@ -1621,6 +1622,15 @@ export class TelegramAlertService {
       const dateArg = parts.find((p: string) => /^\d{4}-\d{2}-\d{2}$/.test(p));
       const args = [dateArg || '', ...(isForce ? ['force'] : [])].filter(Boolean);
       if (botToken) await this.handleCoachCommand(user, botToken, chatId, args);
+      return;
+    }
+    if (data === 'cmd_ask' || data.startsWith('cmd_ask_')) {
+      await this.answerCallbackQuery(botToken, cq.id, 'Consulting SetupMint Copilot...');
+      let q = '';
+      if (data === 'cmd_ask_winrate') q = 'What is my win rate and expectancy?';
+      else if (data === 'cmd_ask_revenge') q = 'How much did revenge trading cost me?';
+      else if (data === 'cmd_ask_strategy') q = 'Which strategy is most profitable?';
+      if (botToken) await this.handleAskCommand(user, botToken, chatId, q);
       return;
     }
     if (data === 'cmd_sessions') {
@@ -3385,6 +3395,13 @@ export class TelegramAlertService {
         await this.handleCoachCommand(user, botToken, chatId, args);
         break;
 
+      case '/ask':
+      case '/copilot':
+      case 'ask':
+      case 'copilot':
+        await this.handleAskCommand(user, botToken, chatId, args.join(' '));
+        break;
+
       case '/news':
       case '/goldnews':
         await this.handleGoldNewsCommand(user, botToken, chatId);
@@ -5042,6 +5059,61 @@ export class TelegramAlertService {
       ]);
     } catch (err: any) {
       await this.sendMessage(botToken, chatId, `❌ Failed to generate AI Coach debrief: ${err.message}`);
+    }
+  }
+
+  /**
+   * Handles natural language /ask and /copilot commands via AiCopilotService.
+   */
+  private static async handleAskCommand(user: any, botToken: string, chatId: string, query: string): Promise<void> {
+    if (!query || !query.trim()) {
+      await this.sendMessage(
+        botToken,
+        chatId,
+        `💡 <b>SetupMint AI Copilot</b>\n\n` +
+          `Ask any question about your trades, psychology, win rates, or playbook edges!\n\n` +
+          `<i>Examples:</i>\n` +
+          `• <code>/ask how is my win rate on BankNifty?</code>\n` +
+          `• <code>/ask how much did revenge trading cost me?</code>\n` +
+          `• <code>/ask which strategy is most profitable?</code>\n` +
+          `• <code>/ask what was my biggest loss this month?</code>`,
+        [
+          [
+            { text: '📊 Win Rate', callback_data: 'cmd_ask_winrate' },
+            { text: '🧠 Revenge Cost', callback_data: 'cmd_ask_revenge' },
+          ],
+          [
+            { text: '🎯 Top Strategy', callback_data: 'cmd_ask_strategy' },
+            { text: '📌 Live Cockpit', callback_data: 'cmd_refresh_cockpit' },
+          ],
+        ]
+      );
+      return;
+    }
+
+    try {
+      const res = await AiCopilotService.askCopilot(user._id, { question: query.trim() });
+      const msg = res.message;
+      const modelTag = msg.modelUsed?.includes('Quant') ? '⚡ Quant Engine' : `🤖 ${msg.modelUsed || 'Gemini'}`;
+
+      let text = `🧠 <b>SetupMint Copilot</b> [<i>${modelTag}</i>]\n\n`;
+      text += msg.content
+        .replace(/###\s+/g, '<b>')
+        .replace(/\n##\s+/g, '\n<b>')
+        .replace(/####\s+/g, '<b>')
+        .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+
+      await this.sendMessage(botToken, chatId, text, [
+        [
+          { text: '📊 View Trades', callback_data: 'cmd_trades' },
+          { text: '🧠 AI Coach', callback_data: 'cmd_coach' },
+        ],
+        [
+          { text: '📌 Live Cockpit', callback_data: 'cmd_refresh_cockpit' },
+        ],
+      ]);
+    } catch (err: any) {
+      await this.sendMessage(botToken, chatId, `❌ Copilot error: ${err.message}`);
     }
   }
 

@@ -49,6 +49,7 @@ import SyncIcon from '@mui/icons-material/SyncRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import RateReviewIcon from '@mui/icons-material/RateReviewRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
@@ -59,6 +60,7 @@ import { SyncMt5Modal } from '../trades/SyncMt5Modal.js';
 import { TradeDrillDrawer } from '../drilldown/TradeDrillDrawer.js';
 import { SetupMintLogo } from '../brand/SetupMintLogo.js';
 import { CommandPalette } from './CommandPalette.js';
+import { AiCopilotDrawer } from '../copilot/AiCopilotDrawer.js';
 import { toast } from '../../context/ToastContext.js';
 
 const DRAWER_WIDTH = 250;
@@ -78,6 +80,8 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [copilotInitialQuestion, setCopilotInitialQuestion] = useState<string | undefined>(undefined);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<null | HTMLElement>(null);
 
@@ -106,6 +110,13 @@ export function AppLayout() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // Cmd/Ctrl + J opens/toggles SetupMint Copilot
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setIsCopilotOpen((prev) => !prev);
         return;
       }
 
@@ -928,6 +939,68 @@ export function AppLayout() {
                 </Button>
               </Tooltip>
 
+              {/* SetupMint AI Copilot Trigger */}
+              <Tooltip title="Ask SetupMint Copilot (Cmd+J)" arrow>
+                <Button
+                  id="ai-copilot-trigger-btn"
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setIsCopilotOpen(true)}
+                  startIcon={<AutoAwesomeRoundedIcon sx={{ fontSize: 17, color: '#8b5cf6' }} />}
+                  sx={{
+                    height: 36,
+                    borderRadius: 2,
+                    borderColor: isDark ? 'rgba(139, 92, 246, 0.35)' : 'rgba(139, 92, 246, 0.45)',
+                    color: isDark ? '#c4b5fd' : '#7c3aed',
+                    textTransform: 'none',
+                    px: 1.5,
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.05)',
+                    display: { xs: 'none', sm: 'inline-flex' },
+                    alignItems: 'center',
+                    gap: 1,
+                    '&:hover': {
+                      borderColor: '#8b5cf6',
+                      backgroundColor: isDark ? 'rgba(139, 92, 246, 0.16)' : 'rgba(139, 92, 246, 0.1)',
+                    },
+                  }}
+                >
+                  <span>Ask Copilot</span>
+                  <Chip
+                    label="⌘J"
+                    size="small"
+                    sx={{
+                      height: 18,
+                      fontSize: '0.625rem',
+                      fontWeight: 700,
+                      fontFamily: `'JetBrains Mono', monospace`,
+                      backgroundColor: isDark ? 'rgba(139, 92, 246, 0.2)' : 'rgba(139, 92, 246, 0.12)',
+                      color: isDark ? '#ddd6fe' : '#6d28d9',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                </Button>
+              </Tooltip>
+
+              {/* Mobile Copilot Icon Button */}
+              {isMobile && (
+                <IconButton
+                  size="small"
+                  onClick={() => setIsCopilotOpen(true)}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 2,
+                    border: `1px solid ${isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.4)'}`,
+                    color: '#8b5cf6',
+                    bgcolor: isDark ? 'rgba(139, 92, 246, 0.08)' : 'rgba(139, 92, 246, 0.04)',
+                  }}
+                >
+                  <AutoAwesomeRoundedIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              )}
+
               {/* Mobile Search Icon Button */}
               {isMobile && (
                 <IconButton
@@ -1271,6 +1344,20 @@ export function AppLayout() {
         open={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         onOpenNewTrade={() => setIsTradeModalOpen(true)}
+        onOpenCopilot={(q) => {
+          setCopilotInitialQuestion(q);
+          setIsCopilotOpen(true);
+        }}
+      />
+
+      {/* SetupMint Conversational AI Copilot Drawer */}
+      <AiCopilotDrawer
+        open={isCopilotOpen}
+        onClose={() => {
+          setIsCopilotOpen(false);
+          setCopilotInitialQuestion(undefined);
+        }}
+        initialQuestion={copilotInitialQuestion}
       />
 
       {/* Universal Trade Drilldown Drawer */}

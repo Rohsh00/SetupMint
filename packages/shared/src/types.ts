@@ -1420,6 +1420,48 @@ export interface IAiWeeklySummary {
   latencyMs?: number;
 }
 
+export interface IAiCopilotMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  suggestedActions?: Array<{
+    label: string;
+    actionType: 'NAVIGATE' | 'DRILLDOWN' | 'FILTER' | 'RETRY';
+    path?: string;
+    filter?: Record<string, any>;
+  }>;
+  dataCards?: Array<{
+    type: 'STAT_SUMMARY' | 'TRADE_LIST' | 'LEAK_AUDIT' | 'STRATEGY_EDGE';
+    title: string;
+    metrics: Record<string, any>;
+    items?: any[];
+  }>;
+  modelUsed?: string;
+  timestamp: string;
+}
+
+export interface IAiCopilotQueryInput {
+  question: string;
+  scopeKey?: string;
+  accountId?: string;
+  history?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
+}
+
+export interface IAiCopilotResponse {
+  message: IAiCopilotMessage;
+  latencyMs?: number;
+  quotaRemaining?: number;
+}
+
+export interface IAiCopilotSuggestion {
+  title: string;
+  prompt: string;
+  category: 'PERFORMANCE' | 'PSYCHOLOGY' | 'STRATEGY' | 'RISK';
+}
+
 export interface IDailyJournal {
   id: string;
   userId: string;

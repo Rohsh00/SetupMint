@@ -1511,36 +1511,6 @@ export interface IAiEdgeMiningReport {
   biggestSurrenderedLeak?: IAiEdgeMiningInsight;
 }
 
-export interface IAiWhatIfSimulationInput {
-  scenarioType: 'REMOVE_REVENGE' | 'TRAIL_STOP_1R' | 'TIME_FILTER' | 'MAX_TRADES_CAP' | 'CUSTOM';
-  customParams?: Record<string, any>;
-  scopeKey?: string;
-  accountId?: string;
-}
-
-export interface IAiWhatIfSimulationResult {
-  scenarioName: string;
-  baseline: {
-    tradesCount: number;
-    netPnL: number;
-    winRate: number;
-    profitFactor: number;
-    maxDrawdown: number;
-  };
-  simulated: {
-    tradesCount: number;
-    netPnL: number;
-    winRate: number;
-    profitFactor: number;
-    maxDrawdown: number;
-  };
-  deltaPnL: number;
-  deltaWinRate: number;
-  deltaDrawdown: number;
-  aiSynthesis: string;
-  modelUsed?: string;
-}
-
 export interface IDailyJournal {
   id: string;
   userId: string;

@@ -1217,11 +1217,6 @@ export const api = {
       if (params.limit) q.set('limit', String(params.limit));
       return request<import('@tradevault/shared').IAiEdgeMiningReport>(`/ai/edge-mining?${q.toString()}`);
     },
-    runWhatIf: (input: import('@tradevault/shared').IAiWhatIfSimulationInput) =>
-      request<import('@tradevault/shared').IAiWhatIfSimulationResult>('/ai/what-if', {
-        method: 'POST',
-        body: JSON.stringify(input),
-      }),
   },
 };
 

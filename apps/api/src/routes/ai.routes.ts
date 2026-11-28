@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { AiCopilotService } from '../services/ai-copilot.service.js';
 import { AiStatementParserService } from '../services/ai-statement-parser.service.js';
 import { AiEdgeMinerService } from '../services/ai-edge-miner.service.js';
-import { AiWhatIfSimulatorService } from '../services/ai-what-if-simulator.service.js';
 import { requireAuth } from '../middleware/auth.js';
 
 export async function aiRoutes(app: FastifyInstance) {
@@ -130,44 +129,6 @@ export async function aiRoutes(app: FastifyInstance) {
         error: {
           code: 'EDGE_MINING_ERROR',
           message: err.message || 'Failed to compute edge mining report.',
-        },
-      });
-    }
-  });
-
-  // POST /api/v1/ai/what-if - Counterfactual "What-If" AI Simulation
-  app.post('/what-if', async (req: any, reply) => {
-    const { scenarioType, customParams, scopeKey, accountId } = req.body || {};
-
-    if (!scenarioType) {
-      return reply.status(400).send({
-        success: false,
-        error: {
-          code: 'INVALID_SCENARIO',
-          message: 'scenarioType is required.',
-        },
-      });
-    }
-
-    try {
-      const result = await AiWhatIfSimulatorService.runSimulation(req.user.id, {
-        scenarioType,
-        customParams,
-        scopeKey,
-        accountId,
-      });
-
-      return reply.send({
-        success: true,
-        data: result,
-      });
-    } catch (err: any) {
-      req.log.error(err, '[AiRoutes] Error running what-if simulation:');
-      return reply.status(500).send({
-        success: false,
-        error: {
-          code: 'WHAT_IF_ERROR',
-          message: err.message || 'Failed to compute what-if simulation.',
         },
       });
     }

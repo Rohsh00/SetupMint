@@ -150,7 +150,14 @@ export function JournalCalendarPage() {
     if (aiDebrief.ruleForTomorrow) {
       setNextDayPlan(aiDebrief.ruleForTomorrow);
     }
-    toast.success('AI Coach insights applied to session reflection!');
+    // Automatically pre-populate best/worst trades and mistake tags from session analysis
+    if (dayDetails?.prefill) {
+      const p = dayDetails.prefill;
+      if (!bestTradeId && p.suggestedBestTrade?.id) setBestTradeId(p.suggestedBestTrade.id);
+      if (!worstTradeId && p.suggestedWorstTrade?.id) setWorstTradeId(p.suggestedWorstTrade.id);
+      if (mistakes.length === 0 && p.aggregatedMistakes?.length) setMistakes(p.aggregatedMistakes);
+    }
+    toast.success('AI Coach insights & session analysis applied to reflection!');
   };
 
   const handleApplyPrefill = () => {
@@ -1294,7 +1301,7 @@ export function JournalCalendarPage() {
                     onClick={handleApplyPrefill}
                     sx={{ fontSize: '0.75rem', fontWeight: 700 }}
                   >
-                    Auto-Prefill Session
+                    Quick-Prefill Trades
                   </Button>
                 )}
               </Box>

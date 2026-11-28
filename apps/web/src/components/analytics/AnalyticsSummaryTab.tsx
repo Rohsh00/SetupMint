@@ -43,7 +43,6 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 
 import { formatCurrency, formatPercent, getCurrencySymbol } from '../../lib/utils.js';
 import { HelpHint } from '../help/index.js';
-import { AiEdgeMiningCard } from './AiEdgeMiningCard.js';
 
 export interface IAnalyticsSummaryTabProps {
   summaryData: any;
@@ -407,9 +406,6 @@ export function AnalyticsSummaryTab({
           </Grid>
         </Grid>
       </Card>
-
-      {/* Unsupervised AI Edge & Leak Mining */}
-      <AiEdgeMiningCard />
 
       {/* 2. TODAY'S PRIORITY DIRECTIVES (BANNER CALLOUTS) */}
       {priorityDirectives.length > 0 && (

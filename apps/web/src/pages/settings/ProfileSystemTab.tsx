@@ -426,6 +426,28 @@ export function ProfileSystemTab({
                     onChange={(e) => setAiEnabled(e.target.checked)}
                   />
                 </Box>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, borderTop: 1, borderColor: 'divider' }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Changes take effect immediately upon saving.
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    {profileSuccess && (
+                      <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <CheckCircleRounded sx={{ fontSize: 16 }} /> Saved
+                      </Typography>
+                    )}
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      disabled={isSavingProfile}
+                      onClick={onProfileSubmit}
+                      sx={{ fontWeight: 600, px: 2.5, py: 0.75 }}
+                    >
+                      {isSavingProfile ? 'Saving...' : 'Save AI Settings'}
+                    </Button>
+                  </Box>
+                </Box>
               </Box>
             </CardContent>
           </Card>
